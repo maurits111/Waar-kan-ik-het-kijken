@@ -11,6 +11,7 @@ export type StreamingResult = {
   name: string;
   year: number | null;
   poster: string | null;
+  titleType: string | null;
   sources: {
     name: string;
     type: string; // "sub" | "rent" | "buy" | "free"
@@ -62,6 +63,7 @@ export async function GET(request: NextRequest) {
       name: firstMatch.name,
       year: firstMatch.year ?? null,
       poster: firstMatch.image_url ?? null,
+      titleType: firstMatch.type ?? null,
       sources: (sourcesData ?? [])
         .filter((s: any) => s.region === region)
         .map((s: any) => ({
