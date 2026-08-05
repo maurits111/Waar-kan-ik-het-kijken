@@ -4,8 +4,6 @@ import { useState } from "react";
 
 const COUNTRIES = [
   { code: "NL", label: "Nederland" },
-  { code: "BE", label: "België" },
-  { code: "US", label: "Verenigde Staten" },
 ];
 
 const MAJOR_PLATFORMS = [
