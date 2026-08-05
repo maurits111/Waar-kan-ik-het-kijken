@@ -52,17 +52,24 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ results: [] as StreamingResult[] });
     }
 
-    // Step 2: fetch streaming sources for that title, filtered by region.
-    const sourcesRes = await fetch(
-      `${WATCHMODE_BASE}/title/${firstMatch.id}/sources/?apiKey=${WATCHMODE_API_KEY}&regions=${region}`
-    );
+    // Step 2: Streamingbronnen én details (inclusief poster) ophalen
+    const [sourcesRes, detailsRes] = await Promise.all([
+      fetch(
+        `${WATCHMODE_BASE}/title/${firstMatch.id}/sources/?apiKey=${WATCHMODE_API_KEY}&regions=${region}`
+      ),
+      fetch(
+        `${WATCHMODE_BASE}/title/${firstMatch.id}/details/?apiKey=${WATCHMODE_API_KEY}`
+      )
+    ]);
+
     const sourcesData = await sourcesRes.json();
+    const detailsData = await detailsRes.json();
 
     const result: StreamingResult = {
       titleId: firstMatch.id,
       name: firstMatch.name,
       year: firstMatch.year ?? null,
-      poster: firstMatch.image_url ?? null,
+      poster: detailsData.poster ?? null,
       titleType: firstMatch.type ?? null,
       sources: (sourcesData ?? [])
         .filter((s: any) => s.region === region)
