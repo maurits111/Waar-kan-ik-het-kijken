@@ -81,27 +81,28 @@ export default function Home() {
         <p className="text-sm text-[#9096a8]">Zoek een titel, kies je land</p>
       </div>
 
-      {/* HOOFDCONTAINER: Foto Links, Zoekbalk + Resultaat Rechts */}
-      <div className="flex flex-col md:flex-row gap-6 w-full max-w-4xl mx-auto items-start">
+      {/* HOOFDCONTAINER: Foto Links op laptop, subtiel op mobiel */}
+      <div className="flex flex-col md:flex-row gap-6 w-full max-w-4xl mx-auto items-center md:items-start">
         
-        {/* LINKS: De grote poster */}
+        {/* LINKS / BOVEN: De poster */}
         {result && (
-          <div className="w-full md:w-64 flex-shrink-0">
+          <div className="w-full md:w-64 flex-shrink-0 flex justify-center md:justify-start">
             {result.poster ? (
               <img
                 src={result.poster}
                 alt={result.name}
-                className="w-full h-80 object-cover rounded-2xl border border-[#2a2e3c] shadow-xl"
+                /* Mobiel: max 140px breed & h-48 (subtiel). Laptop: volle breedte & h-80 (groot) */
+                className="w-full max-w-[140px] md:max-w-none h-48 md:h-80 object-cover rounded-2xl border border-[#2a2e3c] shadow-md md:shadow-xl"
               />
             ) : (
-              <div className="w-full h-80 rounded-2xl border border-[#2a2e3c] bg-[#1b1e29] flex items-center justify-center text-sm text-[#9096a8]">
+              <div className="w-full max-w-[140px] md:max-w-none h-48 md:h-80 rounded-2xl border border-[#2a2e3c] bg-[#1b1e29] flex items-center justify-center text-xs md:text-sm text-[#9096a8]">
                 geen foto
               </div>
             )}
           </div>
         )}
 
-        {/* RECHTS: Zoekbalk + Platformen */}
+        {/* RECHTS / ONDER: Zoekbalk + Platformen */}
         <div className="flex-1 w-full">
           <form
             onSubmit={handleSearch}
