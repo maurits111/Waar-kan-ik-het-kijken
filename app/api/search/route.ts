@@ -1,8 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 
-// This route runs on the server, never in the browser.
-// The Watchmode API key stays in an environment variable, so it's
-// never visible in the page source or dev tools.
 const WATCHMODE_API_KEY = process.env.WATCHMODE_API_KEY;
 const WATCHMODE_BASE = "https://api.watchmode.com/v1";
 
@@ -14,7 +11,7 @@ export type StreamingResult = {
   titleType: string | null;
   sources: {
     name: string;
-    type: string; // "sub" | "rent" | "buy" | "free"
+    type: string;
     webUrl: string;
   }[];
 };
@@ -39,48 +36,68 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    // Step 1: find the title's Watchmode ID by name.
+    // Zoek via het gewone search endpoint
     const searchRes = await fetch(
       `${WATCHMODE_BASE}/search/?apiKey=${WATCHMODE_API_KEY}&search_field=name&search_value=${encodeURIComponent(
         query
       )}`
     );
     const searchData = await searchRes.json();
-    const firstMatch = searchData?.title_results?.[0];
+    const rawMatches = searchData?.title_results || [];
 
-    if (!firstMatch) {
+    // Filteren: Sorteer titels met een poster en recenter jaartal naar boven
+    const matches = rawMatches
+      .sort((a: any, b: any) => (b.year || 0) - (a.year || 0))
+      .slice(0, 5);
+
+    if (matches.length === 0) {
       return NextResponse.json({ results: [] as StreamingResult[] });
     }
 
-    // Step 2: Streamingbronnen én details (inclusief poster) ophalen
-    const [sourcesRes, detailsRes] = await Promise.all([
-      fetch(
-        `${WATCHMODE_BASE}/title/${firstMatch.id}/sources/?apiKey=${WATCHMODE_API_KEY}&regions=${region}`
-      ),
-      fetch(
-        `${WATCHMODE_BASE}/title/${firstMatch.id}/details/?apiKey=${WATCHMODE_API_KEY}`
-      )
-    ]);
+    // Details & bronnen ophalen
+    const results: StreamingResult[] = await Promise.all(
+      matches.map(async (match: any) => {
+        try {
+          const [sourcesRes, detailsRes] = await Promise.all([
+            fetch(
+              `${WATCHMODE_BASE}/title/${match.id}/sources/?apiKey=${WATCHMODE_API_KEY}&regions=${region}`
+            ),
+            fetch(
+              `${WATCHMODE_BASE}/title/${match.id}/details/?apiKey=${WATCHMODE_API_KEY}`
+            ),
+          ]);
 
-    const sourcesData = await sourcesRes.json();
-    const detailsData = await detailsRes.json();
+          const sourcesData = await sourcesRes.json();
+          const detailsData = await detailsRes.json();
 
-    const result: StreamingResult = {
-      titleId: firstMatch.id,
-      name: firstMatch.name,
-      year: firstMatch.year ?? null,
-      poster: detailsData.poster ?? null,
-      titleType: firstMatch.type ?? null,
-      sources: (sourcesData ?? [])
-        .filter((s: any) => s.region === region)
-        .map((s: any) => ({
-          name: s.name,
-          type: s.type,
-          webUrl: s.web_url,
-        })),
-    };
+          return {
+            titleId: match.id,
+            name: match.name,
+            year: match.year ?? detailsData.year ?? null,
+            poster: detailsData.poster ?? null,
+            titleType: match.type ?? detailsData.type ?? null,
+            sources: (Array.isArray(sourcesData) ? sourcesData : [])
+              .filter((s: any) => s.region === region)
+              .map((s: any) => ({
+                name: s.name,
+                type: s.type,
+                webUrl: s.web_url,
+              })),
+          };
+        } catch (e) {
+          return {
+            titleId: match.id,
+            name: match.name,
+            year: match.year ?? null,
+            poster: null,
+            titleType: match.type ?? null,
+            sources: [],
+          };
+        }
+      })
+    );
 
-    return NextResponse.json({ results: [result] });
+    return NextResponse.json({ results });
   } catch (err) {
     console.error(err);
     return NextResponse.json(

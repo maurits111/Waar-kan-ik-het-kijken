@@ -1,10 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 
-const COUNTRIES = [
-  { code: "NL", label: "Nederland" },
-];
+const COUNTRIES = [{ code: "NL", label: "Nederland" }];
 
 const MAJOR_PLATFORMS = [
   { id: "netflix", label: "Netflix", match: "netflix" },
@@ -37,10 +35,67 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // States voor de live suggesties
+  const [suggestions, setSuggestions] = useState<StreamingResult[]>([]);
+  const [isSuggesting, setIsSuggesting] = useState(false);
+  const [showDropdown, setShowDropdown] = useState(false);
+  
+  const searchContainerRef = useRef<HTMLDivElement>(null);
+
+  // Sluit de suggesties als je buiten het zoekveld klikt
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (
+        searchContainerRef.current &&
+        !searchContainerRef.current.contains(e.target as Node)
+      ) {
+        setShowDropdown(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  // Haal live zoeksuggesties op vanaf 3 letters
+  useEffect(() => {
+    if (query.trim().length < 3) {
+      setSuggestions([]);
+      setShowDropdown(false);
+      return;
+    }
+
+    const timer = setTimeout(async () => {
+      setIsSuggesting(true);
+      try {
+        const res = await fetch(
+          `/api/search?q=${encodeURIComponent(query)}&region=${region}`
+        );
+        const data = await res.json();
+        if (res.ok && data.results) {
+          setSuggestions(data.results.slice(0, 5));
+          setShowDropdown(true);
+        }
+      } catch (err) {
+        console.error("Fout bij ophalen suggesties:", err);
+      } finally {
+        setIsSuggesting(false);
+      }
+    }, 300);
+
+    return () => clearTimeout(timer);
+  }, [query, region]);
+
+  const fetchDetails = (selected: StreamingResult) => {
+    setResult(selected);
+    setShowDropdown(false);
+    setError(null);
+  };
+
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!query.trim()) return;
 
+    setShowDropdown(false);
     setLoading(true);
     setError(null);
     setResult(null);
@@ -58,7 +113,7 @@ export default function Home() {
       if (data.results && data.results.length > 0) {
         setResult(data.results[0]);
       } else {
-        setError("Geen resultaten gevonden voor deze zoekopdracht.");
+        setError("Geen resultaten gevonden voor deze film of serie.");
       }
     } catch (err: any) {
       setError(err.message || "Er is een fout opgetreden.");
@@ -81,13 +136,13 @@ export default function Home() {
       <div className="w-full relative">
         <div className="max-w-4xl mx-auto text-center mb-10">
           <span className="inline-block text-[10px] tracking-widest uppercase px-3 py-1.5 rounded-full bg-[#f2a641]/10 text-[#f2a641] font-semibold border border-[#f2a641]/20">
-            Nu zoeken
+            Streaming Zoekmachine
           </span>
-          <h1 className="text-4xl md:text-5xl font-bold mt-5 mb-2 tracking-tight">
+          <h1 className="text-4xl md:text-5xl font-bold mt-5 mb-3 tracking-tight">
             Waar kan ik het kijken?
           </h1>
-          <p className="text-sm text-[#9096a8]">
-            Zoek een titel, kies je land
+          <p className="text-sm md:text-base text-[#9096a8] max-w-lg mx-auto">
+            Typ de naam van een film of serie en ontdek direct op welke streamingdienst hij staat.
           </p>
         </div>
 
@@ -112,18 +167,72 @@ export default function Home() {
             </div>
           )}
 
-          <div className="flex-1 w-full">
+          <div className="flex-1 w-full" ref={searchContainerRef}>
             <form
               onSubmit={handleSearch}
-              className="space-y-3 bg-[#1b1e29] border border-[#2a2e3c] rounded-2xl p-5"
+              className="space-y-3 bg-[#1b1e29] border border-[#2a2e3c] rounded-2xl p-5 relative"
             >
-              <input
-                type="text"
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder="Bijv. The Bear"
-                className="w-full h-11 px-4 rounded-lg border border-[#2a2e3c] bg-[#20232f] text-sm focus:outline-none focus:border-[#f2a641]"
-              />
+              <div className="relative">
+                <input
+                  type="text"
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  onFocus={() => query.trim().length >= 3 && setShowDropdown(true)}
+                  placeholder="Typ een film- of serietitel (bijv. The Bear)..."
+                  className="w-full h-11 px-4 rounded-lg border border-[#2a2e3c] bg-[#20232f] text-sm focus:outline-none focus:border-[#f2a641]"
+                />
+
+                {/* Live Zoeksuggesties Dropdown */}
+                {showDropdown && (
+                  <div className="absolute left-0 right-0 top-12 bg-[#20232f] border border-[#2a2e3c] rounded-xl shadow-2xl z-50 overflow-y-auto max-h-60 mt-1">
+                    {isSuggesting ? (
+                      <div className="p-3 text-xs text-[#9096a8] text-center">
+                        Zoeken naar suggesties...
+                      </div>
+                    ) : suggestions.length > 0 ? (
+                      suggestions.map((item) => (
+                        <button
+                          key={item.titleId}
+                          type="button"
+                          onClick={() => {
+                            setQuery(item.name);
+                            fetchDetails(item);
+                          }}
+                          className="w-full text-left p-2.5 hover:bg-[#1b1e29] flex items-center gap-3 transition-colors border-b border-[#2a2e3c]/40 last:border-none cursor-pointer"
+                        >
+                          {item.poster ? (
+                            <img
+                              src={item.poster}
+                              alt={item.name}
+                              className="w-8 h-11 object-cover rounded flex-shrink-0"
+                            />
+                          ) : (
+                            <div className="w-8 h-11 bg-[#1b1e29] rounded flex items-center justify-center text-[9px] text-[#9096a8] flex-shrink-0">
+                              Geen
+                            </div>
+                          )}
+                          <div className="flex-1 overflow-hidden">
+                            <p className="text-sm text-[#f3f1ea] font-medium truncate">
+                              {item.name}
+                            </p>
+                            <p className="text-[11px] text-[#9096a8]">
+                              {item.year ? item.year : ""}
+                              {item.titleType &&
+                                ` • ${
+                                  item.titleType.includes("tv") ? "Serie" : "Film"
+                                }`}
+                            </p>
+                          </div>
+                        </button>
+                      ))
+                    ) : (
+                      <div className="p-3 text-xs text-[#9096a8] text-center">
+                        Geen suggesties gevonden
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
 
               <div className="relative">
                 <select
@@ -179,8 +288,7 @@ export default function Home() {
                       s.name.toLowerCase().includes(platform.match)
                     );
                     return match ? (
-                      
-                        <a
+                      <a
                         key={platform.id}
                         href={match.webUrl}
                         target="_blank"
