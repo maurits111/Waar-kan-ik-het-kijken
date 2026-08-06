@@ -5,6 +5,9 @@ import { Analytics } from "@vercel/analytics/react";
 export const metadata: Metadata = {
   title: "Waar kan ik het kijken?",
   description: "Zoek een titel en zie direct op welke streamingdiensten het beschikbaar is.",
+  verification: {
+    google: "1PFjOqCDDJlZ-WBr-2XvHupSZgbzC_zy8HUbsgfDnh8",
+  },
 };
 
 export default function RootLayout({
