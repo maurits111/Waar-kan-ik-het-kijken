@@ -91,27 +91,26 @@ export default function Home() {
           </p>
         </div>
 
-        <div className="flex flex-col md:flex-row gap-6 w-full max-w-4xl mx-auto items-center md:items-start">
-          <div className="w-full md:w-64 flex-shrink-0 flex justify-center md:justify-start">
-            {result?.poster ? (
-              <img
-                src={result.poster}
-                alt={result.name}
-                className="w-full max-w-[140px] md:max-w-none h-48 md:h-80 object-cover rounded-2xl border border-[#2a2e3c] shadow-md md:shadow-xl"
-              />
-            ) : result ? (
-              <div className="w-full max-w-[140px] md:max-w-none h-48 md:h-80 rounded-2xl border border-[#2a2e3c] bg-[#1b1e29] flex items-center justify-center text-xs md:text-sm text-[#9096a8]">
-                geen foto
-              </div>
-            ) : (
-              <div className="w-full max-w-[140px] md:max-w-none h-48 md:h-80 rounded-2xl border border-dashed border-[#2a2e3c] bg-[#1b1e29]/40 flex flex-col items-center justify-center gap-2 text-[#565c6e]">
-                <span className="text-3xl">🎬</span>
-                <span className="text-xs text-center px-4">
-                  De poster verschijnt hier
-                </span>
-              </div>
-            )}
-          </div>
+        <div
+          className={`flex flex-col md:flex-row gap-6 w-full mx-auto items-center md:items-start ${
+            result ? "max-w-4xl" : "max-w-md"
+          }`}
+        >
+          {result && (
+            <div className="w-full md:w-64 flex-shrink-0 flex justify-center md:justify-start">
+              {result.poster ? (
+                <img
+                  src={result.poster}
+                  alt={result.name}
+                  className="w-full max-w-[140px] md:max-w-none aspect-[2/3] object-cover rounded-2xl border border-[#2a2e3c] shadow-md md:shadow-xl"
+                />
+              ) : (
+                <div className="w-full max-w-[140px] md:max-w-none aspect-[2/3] rounded-2xl border border-[#2a2e3c] bg-[#1b1e29] flex items-center justify-center text-xs md:text-sm text-[#9096a8]">
+                  geen foto
+                </div>
+              )}
+            </div>
+          )}
 
           <div className="flex-1 w-full">
             <form
