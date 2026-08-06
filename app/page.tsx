@@ -181,6 +181,7 @@ export default function Home() {
                     );
                     return match ? (
                       
+                        <a
                         key={platform.id}
                         href={match.webUrl}
                         target="_blank"
