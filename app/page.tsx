@@ -13,6 +13,16 @@ const MAJOR_PLATFORMS = [
   { id: "videoland", label: "Videoland", match: "videoland" },
 ];
 
+// Populaire suggesties op de homepage
+const POPULAR_SUGGESTIONS = [
+  "The Bear",
+  "Stranger Things",
+  "Dune",
+  "Game of Thrones",
+  "Breaking Bad",
+  "The Last of Us",
+];
+
 interface Source {
   name: string;
   type: string;
@@ -20,12 +30,12 @@ interface Source {
 }
 
 interface StreamingResult {
-  titleId: number;
+  titleId?: number;
   name: string;
-  year: number | null;
+  year: number | string | null;
   poster: string | null;
   titleType: string | null;
-  sources: Source[];
+  sources?: Source[];
 }
 
 export default function Home() {
@@ -39,7 +49,7 @@ export default function Home() {
   const [suggestions, setSuggestions] = useState<StreamingResult[]>([]);
   const [isSuggesting, setIsSuggesting] = useState(false);
   const [showDropdown, setShowDropdown] = useState(false);
-  
+
   const searchContainerRef = useRef<HTMLDivElement>(null);
 
   // Sluit de suggesties als je buiten het zoekveld klikt
@@ -122,20 +132,41 @@ export default function Home() {
     }
   };
 
+  // Functie voor direct zoeken bij het klikken op een populaire tag
+  const handleQuickSearch = (title: string) => {
+    setQuery(title);
+    setLoading(true);
+    setError(null);
+    setResult(null);
+
+    fetch(`/api/search?q=${encodeURIComponent(title)}&region=${region}`)
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.results && data.results.length > 0) {
+          setResult(data.results[0]);
+        } else {
+          setError("Geen resultaten gevonden.");
+        }
+      })
+      .catch(() => setError("Er is een fout opgetreden."))
+      .finally(() => setLoading(false));
+  };
+
   return (
-    <main className="min-h-screen bg-[#12141c] text-[#f3f1ea] p-6 md:p-12 relative overflow-hidden flex items-center">
+    <main className="min-h-screen bg-[#10131a] text-[#f3f1ea] p-6 md:p-12 relative overflow-hidden flex items-center">
+      {/* Achtergrond Glow in Neon Cyan/Blue */}
       <div
         aria-hidden="true"
-        className="pointer-events-none absolute -top-40 left-1/2 -translate-x-1/2 w-[600px] h-[600px] rounded-full bg-[#f2a641]/[0.06] blur-3xl"
+        className="pointer-events-none absolute -top-40 left-1/2 -translate-x-1/2 w-[600px] h-[600px] rounded-full bg-[#00f2fe]/[0.05] blur-3xl"
       />
       <div
         aria-hidden="true"
-        className="pointer-events-none absolute bottom-0 right-0 w-[400px] h-[400px] rounded-full bg-[#f2a641]/[0.04] blur-3xl"
+        className="pointer-events-none absolute bottom-0 right-0 w-[400px] h-[400px] rounded-full bg-[#00f2fe]/[0.03] blur-3xl"
       />
 
       <div className="w-full relative">
         <div className="max-w-4xl mx-auto text-center mb-10">
-          <span className="inline-block text-[10px] tracking-widest uppercase px-3 py-1.5 rounded-full bg-[#f2a641]/10 text-[#f2a641] font-semibold border border-[#f2a641]/20">
+          <span className="inline-block text-[10px] tracking-widest uppercase px-3 py-1.5 rounded-full bg-[#00f2fe]/10 text-[#00f2fe] font-semibold border border-[#00f2fe]/20">
             Streaming Zoekmachine
           </span>
           <h1 className="text-4xl md:text-5xl font-bold mt-5 mb-3 tracking-tight">
@@ -157,10 +188,10 @@ export default function Home() {
                 <img
                   src={result.poster}
                   alt={result.name}
-                  className="w-full max-w-[140px] md:max-w-none aspect-[2/3] object-cover rounded-2xl border border-[#2a2e3c] shadow-md md:shadow-xl"
+                  className="w-full max-w-[140px] md:max-w-none aspect-[2/3] object-cover rounded-2xl border border-[#232838] shadow-md md:shadow-xl"
                 />
               ) : (
-                <div className="w-full max-w-[140px] md:max-w-none aspect-[2/3] rounded-2xl border border-[#2a2e3c] bg-[#1b1e29] flex items-center justify-center text-xs md:text-sm text-[#9096a8]">
+                <div className="w-full max-w-[140px] md:max-w-none aspect-[2/3] rounded-2xl border border-[#232838] bg-[#181c27] flex items-center justify-center text-xs md:text-sm text-[#9096a8]">
                   geen foto
                 </div>
               )}
@@ -170,7 +201,7 @@ export default function Home() {
           <div className="flex-1 w-full" ref={searchContainerRef}>
             <form
               onSubmit={handleSearch}
-              className="space-y-3 bg-[#1b1e29] border border-[#2a2e3c] rounded-2xl p-5 relative"
+              className="space-y-3 bg-[#181c27] border border-[#232838] rounded-2xl p-5 relative"
             >
               <div className="relative">
                 <input
@@ -179,26 +210,26 @@ export default function Home() {
                   onChange={(e) => setQuery(e.target.value)}
                   onFocus={() => query.trim().length >= 3 && setShowDropdown(true)}
                   placeholder="Typ een film- of serietitel (bijv. The Bear)..."
-                  className="w-full h-11 px-4 rounded-lg border border-[#2a2e3c] bg-[#20232f] text-sm focus:outline-none focus:border-[#f2a641]"
+                  className="w-full h-11 px-4 rounded-lg border border-[#232838] bg-[#1e2332] text-sm focus:outline-none focus:border-[#00f2fe]"
                 />
 
                 {/* Live Zoeksuggesties Dropdown */}
                 {showDropdown && (
-                  <div className="absolute left-0 right-0 top-12 bg-[#20232f] border border-[#2a2e3c] rounded-xl shadow-2xl z-50 overflow-y-auto max-h-60 mt-1">
+                  <div className="absolute left-0 right-0 top-12 bg-[#1e2332] border border-[#232838] rounded-xl shadow-2xl z-50 overflow-y-auto max-h-60 mt-1">
                     {isSuggesting ? (
                       <div className="p-3 text-xs text-[#9096a8] text-center">
                         Zoeken naar suggesties...
                       </div>
                     ) : suggestions.length > 0 ? (
-                      suggestions.map((item) => (
+                      suggestions.map((item, index) => (
                         <button
-                          key={item.titleId}
+                          key={item.titleId || index}
                           type="button"
                           onClick={() => {
                             setQuery(item.name);
                             fetchDetails(item);
                           }}
-                          className="w-full text-left p-2.5 hover:bg-[#1b1e29] flex items-center gap-3 transition-colors border-b border-[#2a2e3c]/40 last:border-none cursor-pointer"
+                          className="w-full text-left p-2.5 hover:bg-[#181c27] flex items-center gap-3 transition-colors border-b border-[#232838]/40 last:border-none cursor-pointer"
                         >
                           {item.poster ? (
                             <img
@@ -207,7 +238,7 @@ export default function Home() {
                               className="w-8 h-11 object-cover rounded flex-shrink-0"
                             />
                           ) : (
-                            <div className="w-8 h-11 bg-[#1b1e29] rounded flex items-center justify-center text-[9px] text-[#9096a8] flex-shrink-0">
+                            <div className="w-8 h-11 bg-[#181c27] rounded flex items-center justify-center text-[9px] text-[#9096a8] flex-shrink-0">
                               Geen
                             </div>
                           )}
@@ -238,7 +269,7 @@ export default function Home() {
                 <select
                   value={region}
                   onChange={(e) => setRegion(e.target.value)}
-                  className="w-full h-11 pl-4 pr-9 rounded-lg border border-[#2a2e3c] bg-[#20232f] text-sm appearance-none focus:outline-none focus:border-[#f2a641]"
+                  className="w-full h-11 pl-4 pr-9 rounded-lg border border-[#232838] bg-[#1e2332] text-sm appearance-none focus:outline-none focus:border-[#00f2fe]"
                 >
                   {COUNTRIES.map((c) => (
                     <option key={c.code} value={c.code}>
@@ -254,11 +285,31 @@ export default function Home() {
               <button
                 type="submit"
                 disabled={loading}
-                className="w-full h-11 rounded-lg bg-[#f2a641] text-[#12141c] text-sm font-semibold hover:bg-[#e09530] transition-colors"
+                className="w-full h-11 rounded-lg bg-[#00f2fe] text-[#10131a] text-sm font-semibold hover:bg-[#00d0dc] transition-colors cursor-pointer shadow-[0_0_15px_rgba(0,242,254,0.2)]"
               >
                 {loading ? "Zoeken..." : "Zoek"}
               </button>
             </form>
+
+            {/* SECTIE: Populair nu / Snelle zoek-suggesties */}
+            {!result && (
+              <div className="mt-6 bg-[#181c27] border border-[#232838] rounded-2xl p-5">
+                <p className="text-xs font-semibold tracking-wider uppercase text-[#9096a8] mb-3">
+                  Populair om te zoeken
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {POPULAR_SUGGESTIONS.map((title) => (
+                    <button
+                      key={title}
+                      onClick={() => handleQuickSearch(title)}
+                      className="px-3 py-1.5 rounded-lg bg-[#1e2332] border border-[#232838] text-xs text-[#f3f1ea] hover:border-[#00f2fe] hover:text-[#00f2fe] transition-all cursor-pointer"
+                    >
+                      {title}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {error && (
               <p className="mt-6 text-sm text-[#9096a8] text-center">
@@ -266,8 +317,8 @@ export default function Home() {
               </p>
             )}
 
-            {result && (
-              <div className="mt-6 bg-[#1b1e29] border border-[#2a2e3c] rounded-2xl p-5">
+            {result && result.sources && (
+              <div className="mt-6 bg-[#181c27] border border-[#232838] rounded-2xl p-5">
                 <div className="mb-4">
                   <p className="text-sm text-[#9096a8]">
                     <span className="text-[#f3f1ea] font-medium text-base">
@@ -275,7 +326,7 @@ export default function Home() {
                     </span>
                     {result.year ? ` (${result.year})` : ""}
                     {result.titleType && (
-                      <span className="ml-2 text-[9px] tracking-wide uppercase px-1.5 py-0.5 rounded bg-[#20232f] text-[#9096a8] font-normal">
+                      <span className="ml-2 text-[9px] tracking-wide uppercase px-1.5 py-0.5 rounded bg-[#1e2332] text-[#9096a8] font-normal">
                         {result.titleType.includes("tv") ? "Serie" : "Film"}
                       </span>
                     )}
@@ -284,7 +335,7 @@ export default function Home() {
 
                 <div className="grid grid-cols-2 gap-2">
                   {MAJOR_PLATFORMS.map((platform) => {
-                    const match = result.sources.find((s) =>
+                    const match = result.sources?.find((s) =>
                       s.name.toLowerCase().includes(platform.match)
                     );
                     return match ? (
@@ -293,22 +344,22 @@ export default function Home() {
                         href={match.webUrl}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="flex items-center justify-between p-3 rounded-xl bg-[#20232f] border border-[#f2a641]/30 hover:border-[#f2a641] transition-all"
+                        className="flex items-center justify-between p-3 rounded-xl bg-[#1e2332] border border-[#00f2fe]/30 hover:border-[#00f2fe] transition-all shadow-[0_0_10px_rgba(0,242,254,0.05)]"
                       >
                         <div className="flex items-center gap-2">
-                          <span className="w-2 h-2 rounded-full bg-[#f2a641]" />
+                          <span className="w-2 h-2 rounded-full bg-[#00f2fe]" />
                           <span className="text-sm font-normal text-[#f3f1ea]">
                             {platform.label}
                           </span>
                         </div>
-                        <span className="text-[10px] uppercase font-semibold text-[#f2a641]">
+                        <span className="text-[10px] uppercase font-semibold text-[#00f2fe]">
                           {match.type}
                         </span>
                       </a>
                     ) : (
                       <div
                         key={platform.id}
-                        className="flex items-center justify-between p-3 rounded-xl bg-[#1b1e29] border border-[#2a2e3c]/50 opacity-40"
+                        className="flex items-center justify-between p-3 rounded-xl bg-[#181c27] border border-[#232838]/50 opacity-40"
                       >
                         <div className="flex items-center gap-2">
                           <span className="w-1.5 h-1.5 rounded-full bg-[#3a3f52]" />
