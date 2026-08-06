@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 const WATCHMODE_API_KEY = process.env.WATCHMODE_API_KEY;
-const TMDB_API_KEY = process.env.TMDB_API_KEY; // Voeg toe aan je .env.local!
+const TMDB_API_KEY = process.env.TMDB_API_KEY;
 const WATCHMODE_BASE = "https://api.watchmode.com/v1";
 
 export type StreamingResult = {
@@ -39,7 +39,7 @@ export async function GET(request: NextRequest) {
   try {
     let matches: { id: number; name: string; year: number | null; type: string; poster: string | null }[] = [];
 
-    // STAP 1: Als TMDB API Key aanwezig is, gebruik TMDB voor slimme fuzzy search
+    // STAP 1: Gebruik TMDB voor slimme fuzzy search met populariteitssortering
     if (TMDB_API_KEY) {
       const tmdbRes = await fetch(
         `https://api.themoviedb.org/3/search/multi?api_key=${TMDB_API_KEY}&query=${encodeURIComponent(
@@ -48,11 +48,15 @@ export async function GET(request: NextRequest) {
       );
       const tmdbData = await tmdbRes.json();
       
-      const tmdbResults = (tmdbData?.results || [])
-        .filter((item: any) => item.media_type === "movie" || item.media_type === "tv")
-        .slice(0, 5);
+      const rawResults = (tmdbData?.results || [])
+        .filter((item: any) => item.media_type === "movie" || item.media_type === "tv");
 
-      // Koppel TMDB resultaten aan Watchmode ID's
+      // BELANGRIJK: Sorteer op populariteit van hoog naar laag!
+      rawResults.sort((a: any, b: any) => (b.popularity || 0) - (a.popularity || 0));
+
+      // Pak de top 5 meest populaire matches
+      const tmdbResults = rawResults.slice(0, 5);
+
       matches = await Promise.all(
         tmdbResults.map(async (item: any) => {
           const isTv = item.media_type === "tv";
@@ -63,7 +67,6 @@ export async function GET(request: NextRequest) {
             ? `https://image.tmdb.org/t/p/w500${item.poster_path}`
             : null;
 
-          // Haal Watchmode ID op via TMDB ID
           try {
             const wmSearch = await fetch(
               `${WATCHMODE_BASE}/search/?apiKey=${WATCHMODE_API_KEY}&search_field=tmdb_${isTv ? "tv" : "movie"}_id&search_value=${item.id}`
@@ -90,7 +93,7 @@ export async function GET(request: NextRequest) {
         })
       );
     } else {
-      // FALLBACK: Als er geen TMDB sleutel is, gebruik direct Watchmode
+      // Fallback als TMDB er niet is
       const searchRes = await fetch(
         `${WATCHMODE_BASE}/search/?apiKey=${WATCHMODE_API_KEY}&search_field=name&search_value=${encodeURIComponent(
           query
@@ -110,7 +113,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ results: [] as StreamingResult[] });
     }
 
-    // STAP 2: Haal streamingbronnen op via Watchmode
+    // STAP 2: Haal streamingbronnen op
     const results: StreamingResult[] = await Promise.all(
       matches.map(async (match) => {
         try {
