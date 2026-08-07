@@ -1,9 +1,52 @@
 import { NextRequest, NextResponse } from "next/server";
+import { findPlatform } from "@/lib/platforms";
 
 const WATCHMODE_API_KEY = process.env.WATCHMODE_API_KEY;
 const TMDB_API_KEY = process.env.TMDB_API_KEY;
 const WATCHMODE_BASE = "https://api.watchmode.com/v1";
 const CACHE_REVALIDATE = 86400;
+
+type TmdbProvider = {
+  provider_name?: string;
+  logo_path?: string | null;
+};
+
+async function getProviderLogos(): Promise<Record<string, string>> {
+  if (!TMDB_API_KEY) return {};
+  try {
+    const res = await fetch(
+      `https://api.themoviedb.org/3/watch/providers/movie?api_key=${TMDB_API_KEY}&language=nl-NL&watch_region=NL`,
+      { next: { revalidate: CACHE_REVALIDATE } }
+    );
+    const data = await res.json();
+
+    // Kies per platform de meest canonieke provider (bijv. "Netflix" boven
+    // "Netflix Kids"), zodat varianten het echte logo niet overschrijven.
+    const best: Record<string, { name: string; url: string }> = {};
+    for (const provider of (data?.results ?? []) as TmdbProvider[]) {
+      const platform = provider.provider_name
+        ? findPlatform(provider.provider_name)
+        : null;
+      if (!platform || !provider.logo_path) continue;
+      const name = provider.provider_name!.toLowerCase();
+      const current = best[platform.id];
+      if (!current || name.length < current.name.length) {
+        best[platform.id] = {
+          name,
+          url: `https://image.tmdb.org/t/p/w92${provider.logo_path}`,
+        };
+      }
+    }
+
+    const logos: Record<string, string> = {};
+    for (const [id, value] of Object.entries(best)) {
+      logos[id] = value.url;
+    }
+    return logos;
+  } catch {
+    return {};
+  }
+}
 
 type TmdbItem = {
   id: number;
@@ -12,6 +55,7 @@ type TmdbItem = {
   first_air_date?: string;
   release_date?: string;
   poster_path?: string | null;
+  backdrop_path?: string | null;
   media_type: string;
   popularity: number;
 };
@@ -36,6 +80,7 @@ type SearchMatch = {
   year: number | null;
   type: string;
   poster: string | null;
+  backdrop: string | null;
   popularity: number;
 };
 
@@ -44,12 +89,14 @@ export type StreamingResult = {
   name: string;
   year: number | null;
   poster: string | null;
+  backdrop: string | null;
   titleType: string | null;
   popularity: number;
   sources: {
     name: string;
     type: string;
     webUrl: string;
+    logo: string | null;
   }[];
 };
 
@@ -58,6 +105,12 @@ export async function GET(request: NextRequest) {
   const query = searchParams.get("q");
   const region = searchParams.get("region") ?? "NL";
   const suggestOnly = searchParams.get("mode") === "suggest";
+  const selectParam = searchParams.get("select");
+  // Bij suggesties of een ontbrekende select val je terug op het eerste resultaat
+  const selectIndex =
+    suggestOnly || selectParam === null
+      ? 0
+      : Math.max(0, parseInt(selectParam, 10) || 0);
 
   if (!query) {
     return NextResponse.json(
@@ -97,7 +150,7 @@ export async function GET(request: NextRequest) {
       const tmdbResults = rawResults.slice(0, 5);
 
       matches = await Promise.all(
-        tmdbResults.map(async (item: TmdbItem) => {
+        tmdbResults.map(async (item: TmdbItem, index: number) => {
           const isTv = item.media_type === "tv";
           const title = (isTv ? item.name : item.title) ?? "";
           const releaseDate = isTv ? item.first_air_date : item.release_date;
@@ -105,10 +158,13 @@ export async function GET(request: NextRequest) {
           const poster = item.poster_path
             ? `https://image.tmdb.org/t/p/w500${item.poster_path}`
             : null;
+          const backdrop = item.backdrop_path
+            ? `https://image.tmdb.org/t/p/w780${item.backdrop_path}`
+            : null;
 
           let wmId: number | null = null;
-          // Bij suggesties geen Watchmode-lookup nodig (bespaart API-calls)
-          if (!suggestOnly) {
+          // Alleen voor de geselecteerde titel een Watchmode-lookup doen
+          if (!suggestOnly && index === selectIndex) {
             try {
               const wmSearch = await fetch(
                 `${WATCHMODE_BASE}/search/?apiKey=${WATCHMODE_API_KEY}&search_field=tmdb_${
@@ -129,6 +185,7 @@ export async function GET(request: NextRequest) {
             year: year,
             type: isTv ? "tv_series" : "movie",
             poster: poster,
+            backdrop: backdrop,
             popularity: item.popularity || 0,
           };
         })
@@ -149,6 +206,7 @@ export async function GET(request: NextRequest) {
           year: m.year,
           type: m.type,
           poster: null,
+          backdrop: null,
           popularity: 0,
         })
       );
@@ -158,12 +216,20 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ results: [] as StreamingResult[] });
     }
 
+    // Providerlogo's (alleen nodig als we bronnen ophalen)
+    const providerLogos = !suggestOnly ? await getProviderLogos() : {};
+
     // STAP 2: Haal streamingbronnen op (alleen bij volledige zoekopdracht)
     const results: StreamingResult[] = await Promise.all(
-      matches.map(async (match) => {
-        let sources: { name: string; type: string; webUrl: string }[] = [];
+      matches.map(async (match, index) => {
+        let sources: {
+          name: string;
+          type: string;
+          webUrl: string;
+          logo: string | null;
+        }[] = [];
 
-        if (!suggestOnly) {
+        if (!suggestOnly && index === selectIndex) {
           try {
             const sourcesRes = await fetch(
               `${WATCHMODE_BASE}/title/${match.id}/sources/?apiKey=${WATCHMODE_API_KEY}&regions=${region}`,
@@ -173,11 +239,15 @@ export async function GET(request: NextRequest) {
 
             sources = (Array.isArray(sourcesData) ? sourcesData : [])
               .filter((s: WmSource) => s.region === region)
-              .map((s) => ({
-                name: s.name,
-                type: s.type,
-                webUrl: s.web_url,
-              }));
+              .map((s) => {
+                const platform = findPlatform(s.name);
+                return {
+                  name: s.name,
+                  type: s.type,
+                  webUrl: s.web_url,
+                  logo: platform ? providerLogos[platform.id] ?? null : null,
+                };
+              });
           } catch {
             sources = [];
           }
@@ -188,6 +258,7 @@ export async function GET(request: NextRequest) {
           name: match.name,
           year: match.year,
           poster: match.poster,
+          backdrop: match.backdrop,
           titleType: match.type,
           popularity: match.popularity,
           sources,
