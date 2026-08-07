@@ -3,6 +3,41 @@ import { NextRequest, NextResponse } from "next/server";
 const WATCHMODE_API_KEY = process.env.WATCHMODE_API_KEY;
 const TMDB_API_KEY = process.env.TMDB_API_KEY;
 const WATCHMODE_BASE = "https://api.watchmode.com/v1";
+const CACHE_REVALIDATE = 86400;
+
+type TmdbItem = {
+  id: number;
+  name?: string;
+  title?: string;
+  first_air_date?: string;
+  release_date?: string;
+  poster_path?: string | null;
+  media_type: string;
+  popularity: number;
+};
+
+type WatchmodeTitleResult = {
+  id: number;
+  name: string;
+  year: number | null;
+  type: string;
+};
+
+type WmSource = {
+  name: string;
+  type: string;
+  web_url: string;
+  region?: string;
+};
+
+type SearchMatch = {
+  id: number;
+  name: string;
+  year: number | null;
+  type: string;
+  poster: string | null;
+  popularity: number;
+};
 
 export type StreamingResult = {
   titleId: number;
@@ -10,7 +45,7 @@ export type StreamingResult = {
   year: number | null;
   poster: string | null;
   titleType: string | null;
-  popularity: number;               // <-- added
+  popularity: number;
   sources: {
     name: string;
     type: string;
@@ -22,6 +57,7 @@ export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
   const query = searchParams.get("q");
   const region = searchParams.get("region") ?? "NL";
+  const suggestOnly = searchParams.get("mode") === "suggest";
 
   if (!query) {
     return NextResponse.json(
@@ -38,68 +74,63 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    let matches: {
-      id: number;
-      name: string;
-      year: number | null;
-      type: string;
-      poster: string | null;
-      popularity: number;           // <-- added
-    }[] = [];
+    let matches: SearchMatch[] = [];
 
     // STAP 1: Gebruik TMDB voor slimme fuzzy search met populariteitssortering
     if (TMDB_API_KEY) {
       const tmdbRes = await fetch(
         `https://api.themoviedb.org/3/search/multi?api_key=${TMDB_API_KEY}&query=${encodeURIComponent(
           query
-        )}&language=nl-NL&page=1`
+        )}&language=nl-NL&page=1`,
+        { next: { revalidate: CACHE_REVALIDATE } }
       );
       const tmdbData = await tmdbRes.json();
 
-      const rawResults = (tmdbData?.results || [])
-        .filter((item: any) => item.media_type === "movie" || item.media_type === "tv");
+      const rawResults: TmdbItem[] = (tmdbData?.results || []).filter(
+        (item: TmdbItem) => item.media_type === "movie" || item.media_type === "tv"
+      );
 
       // BELANGRIJK: Sorteer op populariteit van hoog naar laag!
-      rawResults.sort((a: any, b: any) => (b.popularity || 0) - (a.popularity || 0));
+      rawResults.sort((a, b) => (b.popularity || 0) - (a.popularity || 0));
 
       // Pak de top 5 meest populaire matches
       const tmdbResults = rawResults.slice(0, 5);
 
       matches = await Promise.all(
-        tmdbResults.map(async (item: any) => {
+        tmdbResults.map(async (item: TmdbItem) => {
           const isTv = item.media_type === "tv";
-          const title = isTv ? item.name : item.title;
+          const title = (isTv ? item.name : item.title) ?? "";
           const releaseDate = isTv ? item.first_air_date : item.release_date;
           const year = releaseDate ? parseInt(releaseDate.split("-")[0]) : null;
           const poster = item.poster_path
             ? `https://image.tmdb.org/t/p/w500${item.poster_path}`
             : null;
 
-          try {
-            const wmSearch = await fetch(
-              `${WATCHMODE_BASE}/search/?apiKey=${WATCHMODE_API_KEY}&search_field=tmdb_${isTv ? "tv" : "movie"}_id&search_value=${item.id}`
-            );
-            const wmData = await wmSearch.json();
-            const wmId = wmData?.title_results?.[0]?.id;
-
-            return {
-              id: wmId || item.id,
-              name: title,
-              year: year,
-              type: isTv ? "tv_series" : "movie",
-              poster: poster,
-              popularity: item.popularity || 0, // <-- added
-            };
-          } catch {
-            return {
-              id: item.id,
-              name: title,
-              year: year,
-              type: isTv ? "tv_series" : "movie",
-              poster: poster,
-              popularity: item.popularity || 0, // <-- added
-            };
+          let wmId: number | null = null;
+          // Bij suggesties geen Watchmode-lookup nodig (bespaart API-calls)
+          if (!suggestOnly) {
+            try {
+              const wmSearch = await fetch(
+                `${WATCHMODE_BASE}/search/?apiKey=${WATCHMODE_API_KEY}&search_field=tmdb_${
+                  isTv ? "tv" : "movie"
+                }_id&search_value=${item.id}`,
+                { next: { revalidate: CACHE_REVALIDATE } }
+              );
+              const wmData = await wmSearch.json();
+              wmId = wmData?.title_results?.[0]?.id ?? null;
+            } catch {
+              wmId = null;
+            }
           }
+
+          return {
+            id: wmId ?? item.id,
+            name: title,
+            year: year,
+            type: isTv ? "tv_series" : "movie",
+            poster: poster,
+            popularity: item.popularity || 0,
+          };
         })
       );
     } else {
@@ -107,65 +138,62 @@ export async function GET(request: NextRequest) {
       const searchRes = await fetch(
         `${WATCHMODE_BASE}/search/?apiKey=${WATCHMODE_API_KEY}&search_field=name&search_value=${encodeURIComponent(
           query
-        )}`
+        )}`,
+        { next: { revalidate: CACHE_REVALIDATE } }
       );
       const searchData = await searchRes.json();
-      matches = (searchData?.title_results || []).slice(0, 5).map((m: any) => ({
-        id: m.id,
-        name: m.name,
-        year: m.year,
-        type: m.type,
-        poster: null,
-        popularity: 0, // <-- added (no TMDB data)
-      }));
+      matches = (searchData?.title_results || []).slice(0, 5).map(
+        (m: WatchmodeTitleResult): SearchMatch => ({
+          id: m.id,
+          name: m.name,
+          year: m.year,
+          type: m.type,
+          poster: null,
+          popularity: 0,
+        })
+      );
     }
 
     if (matches.length === 0) {
       return NextResponse.json({ results: [] as StreamingResult[] });
     }
 
-    // STAP 2: Haal streamingbronnen op
+    // STAP 2: Haal streamingbronnen op (alleen bij volledige zoekopdracht)
     const results: StreamingResult[] = await Promise.all(
       matches.map(async (match) => {
-        try {
-          const sourcesRes = await fetch(
-            `${WATCHMODE_BASE}/title/${match.id}/sources/?apiKey=${WATCHMODE_API_KEY}&regions=${region}`
-          );
-          const sourcesData = await sourcesRes.json();
+        let sources: { name: string; type: string; webUrl: string }[] = [];
 
-          return {
-            titleId: match.id,
-            name: match.name,
-            year: match.year,
-            poster: match.poster,
-            titleType: match.type,
-            popularity: match.popularity, // <-- added
-            sources: (Array.isArray(sourcesData) ? sourcesData : [])
-              .filter((s: any) => s.region === region)
-              .map((s: any) => ({
+        if (!suggestOnly) {
+          try {
+            const sourcesRes = await fetch(
+              `${WATCHMODE_BASE}/title/${match.id}/sources/?apiKey=${WATCHMODE_API_KEY}&regions=${region}`,
+              { next: { revalidate: CACHE_REVALIDATE } }
+            );
+            const sourcesData = await sourcesRes.json();
+
+            sources = (Array.isArray(sourcesData) ? sourcesData : [])
+              .filter((s: WmSource) => s.region === region)
+              .map((s) => ({
                 name: s.name,
                 type: s.type,
                 webUrl: s.web_url,
-              })),
-          };
-        } catch {
-          return {
-            titleId: match.id,
-            name: match.name,
-            year: match.year,
-            poster: match.poster,
-            titleType: match.type,
-            popularity: match.popularity, // <-- added
-            sources: [],
-          };
+              }));
+          } catch {
+            sources = [];
+          }
         }
+
+        return {
+          titleId: match.id,
+          name: match.name,
+          year: match.year,
+          poster: match.poster,
+          titleType: match.type,
+          popularity: match.popularity,
+          sources,
+        };
       })
     );
-
-    // Debug: log first result's popularity
-    if (results.length > 0) {
-      console.log('DEBUG: first result popularity:', results[0].popularity, 'title:', results[0].name);
-    }
 
     return NextResponse.json({ results });
   } catch (err) {
