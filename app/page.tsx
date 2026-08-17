@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { MAJOR_PLATFORMS, type Platform } from "@/lib/platforms";
+import Link from "next/link";
 
 const REGION = "NL";
 const RECENT_KEY = "waarkijk-recent";
@@ -577,14 +578,11 @@ const findBestSource = (
                       ))
                     ) : (
                       trending.map((t) => (
-                        <button
-                          key={`${t.media_type}-${t.id}`}
-                          onClick={() => {
-                            setQuery(t.name);
-                            performSearch(t.name);
-                          }}
-                          className="w-32 shrink-0 text-left group"
-                        >
+                        <Link
+  key={`${t.media_type}-${t.id}`}
+  href={`/titel/${t.media_type}-${t.id}`}
+  className="w-32 shrink-0 text-left group block"
+>
                           {t.poster ? (
                             // eslint-disable-next-line @next/next/no-img-element
                             <img
@@ -604,7 +602,7 @@ const findBestSource = (
                             {t.year || ""}
                             {t.media_type === "tv" ? " • Serie" : " • Film"}
                           </p>
-                        </button>
+                        </Link>
                       ))
                     )}
                   </div>
@@ -706,6 +704,14 @@ const findBestSource = (
                                 </span>
                               )}
                             </p>
+                            {result.titleId && (
+                              <Link
+                                href={`/titel/${result.titleType?.includes("tv") ? "tv" : "movie"}-${result.titleId}`}
+                                className="inline-block mt-1 text-xs text-[#00f2fe] hover:underline"
+                              >
+                                Bekijk permanente pagina →
+                              </Link>
+                            )}
                           </div>
 
                           {loadingSources ? (

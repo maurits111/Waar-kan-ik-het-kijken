@@ -20,8 +20,6 @@ async function getProviderLogos(): Promise<Record<string, string>> {
     );
     const data = await res.json();
 
-    // Kies per platform de meest canonieke provider (bijv. "Netflix" boven
-    // "Netflix Kids"), zodat varianten het echte logo niet overschrijven.
     const best: Record<string, { name: string; url: string }> = {};
     for (const provider of (data?.results ?? []) as TmdbProvider[]) {
       const platform = provider.provider_name
@@ -75,7 +73,8 @@ type WmSource = {
 };
 
 type SearchMatch = {
-  id: number;
+  id: number; // altijd het TMDB-ID
+  watchmodeId: number | null; // alleen intern gebruikt om bronnen op te halen
   name: string;
   year: number | null;
   type: string;
@@ -106,7 +105,6 @@ export async function GET(request: NextRequest) {
   const region = searchParams.get("region") ?? "NL";
   const suggestOnly = searchParams.get("mode") === "suggest";
   const selectParam = searchParams.get("select");
-  // Bij suggesties of een ontbrekende select val je terug op het eerste resultaat
   const selectIndex =
     suggestOnly || selectParam === null
       ? 0
@@ -129,7 +127,6 @@ export async function GET(request: NextRequest) {
   try {
     let matches: SearchMatch[] = [];
 
-    // STAP 1: Gebruik TMDB voor slimme fuzzy search met populariteitssortering
     if (TMDB_API_KEY) {
       const tmdbRes = await fetch(
         `https://api.themoviedb.org/3/search/multi?api_key=${TMDB_API_KEY}&query=${encodeURIComponent(
@@ -143,10 +140,7 @@ export async function GET(request: NextRequest) {
         (item: TmdbItem) => item.media_type === "movie" || item.media_type === "tv"
       );
 
-      // BELANGRIJK: Sorteer op populariteit van hoog naar laag!
       rawResults.sort((a, b) => (b.popularity || 0) - (a.popularity || 0));
-
-      // Pak de top 5 meest populaire matches
       const tmdbResults = rawResults.slice(0, 5);
 
       matches = await Promise.all(
@@ -162,8 +156,7 @@ export async function GET(request: NextRequest) {
             ? `https://image.tmdb.org/t/p/w780${item.backdrop_path}`
             : null;
 
-          let wmId: number | null = null;
-          // Alleen voor de geselecteerde titel een Watchmode-lookup doen
+          let watchmodeId: number | null = null;
           if (!suggestOnly && index === selectIndex) {
             try {
               const wmSearch = await fetch(
@@ -173,14 +166,15 @@ export async function GET(request: NextRequest) {
                 { next: { revalidate: CACHE_REVALIDATE } }
               );
               const wmData = await wmSearch.json();
-              wmId = wmData?.title_results?.[0]?.id ?? null;
+              watchmodeId = wmData?.title_results?.[0]?.id ?? null;
             } catch {
-              wmId = null;
+              watchmodeId = null;
             }
           }
 
           return {
-            id: wmId ?? item.id,
+            id: item.id, // altijd het TMDB-ID, ongeacht of dit het geselecteerde item is
+            watchmodeId,
             name: title,
             year: year,
             type: isTv ? "tv_series" : "movie",
@@ -191,7 +185,6 @@ export async function GET(request: NextRequest) {
         })
       );
     } else {
-      // Fallback als TMDB er niet is
       const searchRes = await fetch(
         `${WATCHMODE_BASE}/search/?apiKey=${WATCHMODE_API_KEY}&search_field=name&search_value=${encodeURIComponent(
           query
@@ -201,7 +194,8 @@ export async function GET(request: NextRequest) {
       const searchData = await searchRes.json();
       matches = (searchData?.title_results || []).slice(0, 5).map(
         (m: WatchmodeTitleResult): SearchMatch => ({
-          id: m.id,
+          id: m.id, // let op: dit is in dit fallback-pad wel een Watchmode-ID, alleen actief zonder TMDB-sleutel
+          watchmodeId: m.id,
           name: m.name,
           year: m.year,
           type: m.type,
@@ -216,10 +210,8 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ results: [] as StreamingResult[] });
     }
 
-    // Providerlogo's (alleen nodig als we bronnen ophalen)
     const providerLogos = !suggestOnly ? await getProviderLogos() : {};
 
-    // STAP 2: Haal streamingbronnen op (alleen bij volledige zoekopdracht)
     const results: StreamingResult[] = await Promise.all(
       matches.map(async (match, index) => {
         let sources: {
@@ -229,10 +221,10 @@ export async function GET(request: NextRequest) {
           logo: string | null;
         }[] = [];
 
-        if (!suggestOnly && index === selectIndex) {
+        if (!suggestOnly && index === selectIndex && match.watchmodeId) {
           try {
             const sourcesRes = await fetch(
-              `${WATCHMODE_BASE}/title/${match.id}/sources/?apiKey=${WATCHMODE_API_KEY}&regions=${region}`,
+              `${WATCHMODE_BASE}/title/${match.watchmodeId}/sources/?apiKey=${WATCHMODE_API_KEY}&regions=${region}`,
               { next: { revalidate: CACHE_REVALIDATE } }
             );
             const sourcesData = await sourcesRes.json();
