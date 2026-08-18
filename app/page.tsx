@@ -131,6 +131,10 @@ export default function Home() {
     if (query.trim().length < 3) {
       return;
     }
+    
+    if (query === searchedQueryRef.current) {
+      return;
+    }
 
     const controller = new AbortController();
     const timer = setTimeout(async () => {
