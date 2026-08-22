@@ -30,7 +30,18 @@ export type TitleDetails = {
   poster: string | null;
   backdrop: string | null;
   titleType: "movie" | "tv_series";
+  genres: string[];
+  voteAverage: number | null;
+  voteCount: number;
   sources: StreamingSource[];
+  similar: SimilarTitle[];
+};
+
+export type SimilarTitle = {
+  tmdbId: number;
+  name: string;
+  poster: string | null;
+  titleType: "movie" | "tv_series";
 };
 
 async function getProviderLogos(): Promise<Record<string, string>> {
@@ -110,6 +121,36 @@ function dedupeSources(
   });
 }
 
+async function getSimilarTitles(
+  tmdbId: number,
+  type: "movie" | "tv"
+): Promise<SimilarTitle[]> {
+  if (!TMDB_API_KEY) return [];
+  try {
+    const res = await fetch(
+      `https://api.themoviedb.org/3/${type}/${tmdbId}/recommendations?api_key=${TMDB_API_KEY}&language=nl-NL`,
+      { next: { revalidate: CACHE_REVALIDATE } }
+    );
+    const data = await res.json();
+    return (data?.results ?? [])
+      .slice(0, 6)
+      .map((item: { id: number; title?: string; name?: string; poster_path?: string | null }) => ({
+        tmdbId: item.id,
+        name: (type === "tv" ? item.name : item.title) ?? "",
+        poster: item.poster_path
+          ? `https://image.tmdb.org/t/p/w342${item.poster_path}`
+          : null,
+        titleType: type === "tv" ? "tv_series" as const : "movie" as const,
+      }));
+  } catch {
+    return [];
+  }
+}
+
+
+
+
+
 export async function getTitleData(
   tmdbId: number,
   type: "movie" | "tv"
@@ -150,6 +191,7 @@ export async function getTitleData(
   }
 
   let sources: StreamingSource[] = [];
+    const similar = await getSimilarTitles(tmdbId, type);
   if (watchmodeId) {
     try {
       const providerLogos = await getProviderLogos();
@@ -167,14 +209,19 @@ export async function getTitleData(
     }
   }
 
-  return {
+    return {
     tmdbId,
     name,
     year,
+    releaseDate: releaseDate ?? null,
     overview: detail.overview ?? "",
     poster,
     backdrop,
     titleType: type === "tv" ? "tv_series" : "movie",
+    genres: (detail.genres ?? []).map((g: { name: string }) => g.name),
+    voteAverage: detail.vote_average ?? null,
+    voteCount: detail.vote_count ?? 0,
     sources,
+    similar,
   };
 }
