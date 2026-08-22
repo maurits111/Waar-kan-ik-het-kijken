@@ -26,6 +26,7 @@ export type TitleDetails = {
   tmdbId: number;
   name: string;
   year: number | null;
+  releaseDate: string | null;
   overview: string;
   poster: string | null;
   backdrop: string | null;
