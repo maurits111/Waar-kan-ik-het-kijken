@@ -13,7 +13,6 @@ const TYPE_LABELS: Record<string, string> = {
   buy: "Koop",
 };
 
-// Populaire suggesties op de homepage
 const POPULAR_SUGGESTIONS = [
   "The Bear",
   "Stranger Things",
@@ -66,13 +65,14 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // States voor de live suggesties
+  const [selectedPlatform, setSelectedPlatform] = useState("");
+  const [selectedType, setSelectedType] = useState("");
+
   const [suggestions, setSuggestions] = useState<StreamingResult[]>([]);
   const [isSuggesting, setIsSuggesting] = useState(false);
   const [showDropdown, setShowDropdown] = useState(false);
   const [activeIndex, setActiveIndex] = useState(-1);
 
-  // Landing-page content
   const [trending, setTrending] = useState<TrendingItem[]>([]);
   const [recent, setRecent] = useState<string[]>([]);
   const [trendingLoading, setTrendingLoading] = useState(true);
@@ -84,7 +84,7 @@ export default function Home() {
   const searchedQueryRef = useRef("");
 
   const result = results.length > 0 ? results[selectedIndex] : null;
-  const wide = Boolean(result) || loading;
+  const wide = Boolean(result) || loading || results.length > 1;
 
   const sortedSuggestions = useMemo(
     () =>
@@ -94,7 +94,6 @@ export default function Home() {
     [suggestions]
   );
 
-  // Sluit de suggesties als je buiten het zoekveld klikt
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
       if (
@@ -108,7 +107,6 @@ export default function Home() {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  // Sneltoets: '/' focust het zoekveld
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement;
@@ -126,7 +124,6 @@ export default function Home() {
     return () => document.removeEventListener("keydown", onKey);
   }, []);
 
-  // Haal live zoeksuggesties op vanaf 3 letters
   useEffect(() => {
     if (query.trim().length < 3) {
       return;
@@ -175,15 +172,13 @@ export default function Home() {
       const next = [trimmed, ...prev.filter((x) => x !== trimmed)].slice(0, 5);
       try {
         window.localStorage.setItem(RECENT_KEY, JSON.stringify(next));
-      } catch {
-        // opslag niet beschikbaar (private mode e.d.)
-      }
+      } catch {}
       return next;
     });
   }, []);
 
   const performSearch = useCallback(async (searchQuery: string, select = 0) => {
-    if (!searchQuery.trim()) return;
+    if (!searchQuery.trim() && !selectedPlatform && !selectedType) return;
 
     searchedQueryRef.current = searchQuery;
     setShowDropdown(false);
@@ -194,9 +189,12 @@ export default function Home() {
     setLastLoadedIndex(select);
 
     try {
-      const res = await fetch(
-        `/api/search?q=${encodeURIComponent(searchQuery)}&region=${REGION}&select=${select}`
-      );
+      let url = `/api/search?region=${REGION}&select=${select}`;
+      if (searchQuery.trim()) url += `&q=${encodeURIComponent(searchQuery)}`;
+      if (selectedPlatform) url += `&platform=${encodeURIComponent(selectedPlatform)}`;
+      if (selectedType) url += `&type=${encodeURIComponent(selectedType)}`;
+
+      const res = await fetch(url);
       const data = await res.json();
 
       if (!res.ok) {
@@ -208,25 +206,27 @@ export default function Home() {
         setResults(data.results);
         setSelectedIndex(safeIndex);
         setLastLoadedIndex(safeIndex);
-        saveRecent(searchQuery);
+        if (searchQuery.trim()) saveRecent(searchQuery);
 
-        const current = new URLSearchParams(window.location.search).get("q");
-        if (current !== searchQuery) {
-          window.history.pushState(
-            { q: searchQuery },
-            "",
-            `?q=${encodeURIComponent(searchQuery)}`
-          );
+        if (searchQuery.trim()) {
+          const current = new URLSearchParams(window.location.search).get("q");
+          if (current !== searchQuery) {
+            window.history.pushState(
+              { q: searchQuery },
+              "",
+              `?q=${encodeURIComponent(searchQuery)}`
+            );
+          }
         }
       } else {
-        setError("Geen resultaten gevonden voor deze film of serie.");
+        setError("Geen resultaten gevonden voor deze filters of titel.");
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Er is een fout opgetreden.");
     } finally {
       setLoading(false);
     }
-  }, [saveRecent]);
+  }, [saveRecent, selectedPlatform, selectedType]);
 
   const selectResult = (index: number) => {
     const item = results[index];
@@ -238,11 +238,15 @@ export default function Home() {
     }
 
     setLoadingSources(true);
-    fetch(
-      `/api/search?q=${encodeURIComponent(
-        searchedQueryRef.current
-      )}&region=${REGION}&select=${index}`
-    )
+    
+    let url = `/api/search?region=${REGION}&select=${index}`;
+    if (searchedQueryRef.current.trim()) {
+      url += `&q=${encodeURIComponent(searchedQueryRef.current)}`;
+    }
+    if (selectedPlatform) url += `&platform=${encodeURIComponent(selectedPlatform)}`;
+    if (selectedType) url += `&type=${encodeURIComponent(selectedType)}`;
+
+    fetch(url)
       .then((res) => res.json())
       .then((data) => {
         if (data.results && data.results.length > 0) {
@@ -250,13 +254,10 @@ export default function Home() {
           setLastLoadedIndex(index);
         }
       })
-      .catch(() => {
-        // bronnen blijven leeg; toont "niet gevonden"
-      })
+      .catch(() => {})
       .finally(() => setLoadingSources(false));
   };
 
-  // Laad recente zoekopdrachten en een (eventuele) zoekquery uit de URL
   useEffect(() => {
     const t = window.setTimeout(() => {
       setRecent(loadRecentSearches());
@@ -273,7 +274,6 @@ export default function Home() {
     return () => window.clearTimeout(t);
   }, [performSearch]);
 
-  // Laad trending
   useEffect(() => {
     let cancelled = false;
     fetch("/api/trending")
@@ -283,9 +283,7 @@ export default function Home() {
           setTrending(data.results);
         }
       })
-      .catch(() => {
-        // stil falen; geen trending sectie
-      })
+      .catch(() => {})
       .finally(() => {
         if (!cancelled) {
           setTrendingLoading(false);
@@ -296,29 +294,6 @@ export default function Home() {
       cancelled = true;
     };
   }, []);
-
-  // Back/forward support: reageer op URL-veranderingen
-  useEffect(() => {
-    const onPop = () => {
-      const params = new URLSearchParams(window.location.search);
-      const q = params.get("q");
-      if (q) {
-        setQuery(q);
-        searchedQueryRef.current = q;
-        performSearch(q);
-      } else {
-        setQuery("");
-        setResults([]);
-        setSelectedIndex(0);
-        setSuggestions([]);
-        setShowDropdown(false);
-        setError(null);
-        setLoading(false);
-      }
-    };
-    window.addEventListener("popstate", onPop);
-    return () => window.removeEventListener("popstate", onPop);
-  }, [performSearch]);
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
@@ -360,22 +335,20 @@ export default function Home() {
 
   const typeLabel = (type: string | undefined) => TYPE_LABELS[type || ""] || type || "";
 
-// Kies de meest canonieke bron voor een platform (bijv. "Netflix" boven "Netflix Kids")
-const findBestSource = (
-  sources: Source[] | undefined,
-  platform: Platform
-): Source | undefined => {
-  if (!sources) return undefined;
-  const matches = sources.filter((s) =>
-    s.name.toLowerCase().includes(platform.match)
-  );
-  if (matches.length === 0) return undefined;
-  return matches.reduce((best, s) => (s.name.length < best.name.length ? s : best));
-};
+  const findBestSource = (
+    sources: Source[] | undefined,
+    platform: Platform
+  ): Source | undefined => {
+    if (!sources) return undefined;
+    const matches = sources.filter((s) =>
+      s.name.toLowerCase().includes(platform.match)
+    );
+    if (matches.length === 0) return undefined;
+    return matches.reduce((best, s) => (s.name.length < best.name.length ? s : best));
+  };
 
   return (
     <main className="min-h-screen bg-[#10131a] text-[#f3f1ea] p-6 md:p-12 relative overflow-hidden flex flex-col">
-      {/* Achtergrond Glow in Neon Cyan/Blue */}
       <div
         aria-hidden="true"
         className="pointer-events-none absolute -top-40 left-1/2 -translate-x-1/2 w-[600px] h-[600px] rounded-full bg-[#00f2fe]/[0.05] blur-3xl"
@@ -395,7 +368,7 @@ const findBestSource = (
               Waar kan ik het kijken?
             </h1>
             <p className="text-sm md:text-base text-[#9096a8] max-w-lg mx-auto">
-              Typ de naam van een film of serie en ontdek direct op welke streamingdienst hij staat.
+              Typ de naam van een film of serie of kies een dienst om direct te ontdekken wat erop staat.
             </p>
           </div>
 
@@ -426,7 +399,7 @@ const findBestSource = (
                     }}
                     onFocus={() => query.trim().length >= 3 && setShowDropdown(true)}
                     onKeyDown={handleKeyDown}
-                    placeholder="Typ een film- of serietitel (bijv. The Bear)..."
+                    placeholder="Typ een titel of laat leeg om te bladeren..."
                     aria-label="Zoek een film of serie"
                     role="combobox"
                     aria-expanded={showDropdown}
@@ -438,7 +411,6 @@ const findBestSource = (
                     className="w-full h-11 px-4 rounded-lg border border-[#232838] bg-[#1e2332] text-sm focus:border-[#00f2fe]"
                   />
 
-                  {/* Live Zoeksuggesties Dropdown */}
                   {showDropdown && (
                     <div
                       id="zoek-suggesties"
@@ -485,18 +457,6 @@ const findBestSource = (
                                 {item.year ? item.year : ""}
                                 {item.titleType &&
                                   ` • ${item.titleType.includes("tv") ? "Serie" : "Film"}`}
-                                {item.popularity && item.popularity > 100 && (
-                                  <span
-                                    aria-hidden="true"
-                                    className="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-[9px] bg-[#00f2fe]/20 text-[#00f2fe]"
-                                  >
-                                    {item.popularity > 5000
-                                      ? "🔥🔥"
-                                      : item.popularity > 1000
-                                        ? "🔥"
-                                        : ""}
-                                  </span>
-                                )}
                               </p>
                             </div>
                           </button>
@@ -510,9 +470,29 @@ const findBestSource = (
                   )}
                 </div>
 
-                <div className="flex items-center justify-between h-11 px-4 rounded-lg border border-[#232838] bg-[#1e2332] text-sm">
-                  <span className="text-[#9096a8]">Land</span>
-                  <span className="font-medium text-[#f3f1ea]">Nederland</span>
+                <div className="grid grid-cols-2 gap-2">
+                  <select
+                    value={selectedPlatform}
+                    onChange={(e) => setSelectedPlatform(e.target.value)}
+                    className="h-11 px-3 rounded-lg border border-[#232838] bg-[#1e2332] text-sm text-[#f3f1ea] focus:border-[#00f2fe] outline-none cursor-pointer"
+                  >
+                    <option value="">Alle diensten</option>
+                    {MAJOR_PLATFORMS.map((p) => (
+                      <option key={p.id} value={p.match}>
+                        {p.label}
+                      </option>
+                    ))}
+                  </select>
+
+                  <select
+                    value={selectedType}
+                    onChange={(e) => setSelectedType(e.target.value)}
+                    className="h-11 px-3 rounded-lg border border-[#232838] bg-[#1e2332] text-sm text-[#f3f1ea] focus:border-[#00f2fe] outline-none cursor-pointer"
+                  >
+                    <option value="">Films & Series</option>
+                    <option value="movie">Alleen Films</option>
+                    <option value="tv">Alleen Series</option>
+                  </select>
                 </div>
 
                 <button
@@ -520,15 +500,10 @@ const findBestSource = (
                   disabled={loading}
                   className="w-full h-11 rounded-lg bg-[#00f2fe] text-[#10131a] text-sm font-semibold hover:bg-[#00d0dc] transition-colors cursor-pointer shadow-[0_0_15px_rgba(0,242,254,0.2)] disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  {loading ? "Zoeken..." : "Zoek"}
+                  {loading ? "Laden..." : "Toon overzicht"}
                 </button>
               </form>
 
-              <p className="mt-3 text-center text-[11px] text-[#565c6e]">
-                Tip: druk op <kbd className="px-1.5 py-0.5 rounded bg-[#1e2332] border border-[#232838]">/</kbd> om snel te zoeken
-              </p>
-
-              {/* Recente zoekopdrachten */}
               {!wide && recent.length > 0 && (
                 <div className="mt-6">
                   <div className="flex items-center justify-between mb-2">
@@ -540,9 +515,7 @@ const findBestSource = (
                         setRecent([]);
                         try {
                           window.localStorage.removeItem(RECENT_KEY);
-                        } catch {
-                          // negeer
-                        }
+                        } catch {}
                       }}
                       className="text-[10px] text-[#565c6e] hover:text-[#9096a8] cursor-pointer"
                     >
@@ -566,7 +539,6 @@ const findBestSource = (
                 </div>
               )}
 
-              {/* SECTIE: Populair nu */}
               {!wide && (trendingLoading || trending.length > 0) && (
                 <section className="mt-8">
                   <p className="text-xs font-semibold tracking-wider uppercase text-[#9096a8] mb-3">
@@ -583,10 +555,10 @@ const findBestSource = (
                     ) : (
                       trending.map((t) => (
                         <Link
-  key={`${t.media_type}-${t.id}`}
-  href={`/titel/${t.media_type}-${t.id}`}
-  className="w-32 shrink-0 text-left group block"
->
+                          key={`${t.media_type}-${t.id}`}
+                          href={`/titel/${t.media_type}-${t.id}`}
+                          className="w-32 shrink-0 text-left group block"
+                        >
                           {t.poster ? (
                             // eslint-disable-next-line @next/next/no-img-element
                             <img
@@ -613,55 +585,69 @@ const findBestSource = (
                 </section>
               )}
 
-              {/* SECTIE: Populair om te zoeken */}
-              {!wide && (
-                <div className="mt-6 bg-[#181c27] border border-[#232838] rounded-2xl p-5">
-                  <p className="text-xs font-semibold tracking-wider uppercase text-[#9096a8] mb-3">
-                    Populair om te zoeken
-                  </p>
-                  <div className="flex flex-wrap gap-2">
-                    {POPULAR_SUGGESTIONS.map((title) => (
-                      <button
-                        key={title}
-                        onClick={() => {
-                          setQuery(title);
-                          performSearch(title);
-                        }}
-                        className="px-3 py-1.5 rounded-lg bg-[#1e2332] border border-[#232838] text-xs text-[#f3f1ea] hover:border-[#00f2fe] hover:text-[#00f2fe] transition-all cursor-pointer"
-                      >
-                        {title}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-
               {error && (
                 <p aria-live="polite" className="mt-6 text-sm text-[#9096a8] text-center">
                   {error}
                 </p>
               )}
 
-              {/* Skeleton tijdens het laden */}
               {loading && (
                 <div className="mt-6 animate-pulse" aria-hidden="true">
                   <div className="rounded-2xl border border-[#232838] bg-[#181c27] p-6">
-                    <div className="flex flex-col sm:flex-row gap-5">
-                      <div className="w-40 h-56 bg-[#232838] rounded-xl mx-auto sm:mx-0" />
-                      <div className="flex-1 space-y-3">
-                        <div className="h-6 w-2/3 bg-[#232838] rounded" />
-                        <div className="h-4 w-1/3 bg-[#232838] rounded" />
-                        <div className="grid grid-cols-2 lg:grid-cols-3 gap-2 pt-2">
-                          {Array.from({ length: 6 }).map((_, i) => (
-                            <div key={i} className="h-14 bg-[#232838] rounded-xl" />
-                          ))}
-                        </div>
-                      </div>
+                    <div className="h-6 w-1/3 bg-[#232838] rounded mb-4" />
+                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
+                      {Array.from({ length: 10 }).map((_, i) => (
+                        <div key={i} className="aspect-[2/3] bg-[#232838] rounded-xl" />
+                      ))}
                     </div>
                   </div>
                 </div>
               )}
 
+              {/* Resultatenlijst (als er meerdere zijn) */}
+              {!loading && results.length > 1 && (
+                <div className="mt-6">
+                  <p className="text-xs font-semibold tracking-wider uppercase text-[#9096a8] mb-3">
+                    Top keuzes ({results.length}) - Klik op een titel voor details
+                  </p>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
+                    {results.map((item, index) => (
+                      <button
+                        key={item.titleId || index}
+                        onClick={() => selectResult(index)}
+                        className={`text-left group p-2 rounded-xl border transition-all cursor-pointer ${
+                          selectedIndex === index
+                            ? "bg-[#1e2332] border-[#00f2fe]"
+                            : "bg-[#181c27] border-[#232838] hover:border-[#00f2fe]/50"
+                        }`}
+                      >
+                        {item.poster ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            src={item.poster}
+                            alt={item.name}
+                            loading="lazy"
+                            decoding="async"
+                            className="w-full aspect-[2/3] object-cover rounded-lg mb-2"
+                          />
+                        ) : (
+                          <div className="w-full aspect-[2/3] bg-[#1e2332] rounded-lg mb-2 flex items-center justify-center text-[10px] text-[#9096a8]">
+                            Geen foto
+                          </div>
+                        )}
+                        <p className="text-xs font-medium text-[#f3f1ea] truncate">
+                          {item.name}
+                        </p>
+                        <p className="text-[10px] text-[#9096a8]">
+                          {item.year || ""} {item.titleType?.includes("tv") ? "• Serie" : "• Film"}
+                        </p>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Detailweergave voor het geselecteerde item */}
               {result && (
                 <div aria-live="polite" className="mt-6">
                   <div className="relative overflow-hidden rounded-2xl border border-[#232838]">
@@ -708,14 +694,6 @@ const findBestSource = (
                                 </span>
                               )}
                             </p>
-                            {result.titleId && (
-                              <Link
-                                href={`/titel/${result.titleType?.includes("tv") ? "tv" : "movie"}-${result.titleId}`}
-                                className="inline-block mt-1 text-xs text-[#00f2fe] hover:underline"
-                              >
-                                Bekijk permanente pagina →
-                              </Link>
-                            )}
                           </div>
 
                           {loadingSources ? (
@@ -786,7 +764,7 @@ const findBestSource = (
                                       {platform.label}
                                     </span>
                                     <span className="block text-[10px] text-[#565c6e]">
-                                      niet gevonden
+                                      Niet beschikbaar
                                     </span>
                                   </span>
                                 </div>
@@ -796,68 +774,19 @@ const findBestSource = (
                           )}
                         </div>
                       </div>
-
-                      <p className="mt-4 text-[11px] text-[#565c6e]">
-                        Gebaseerd op onze bronnen (Watchmode). Sommige diensten, zoals NPO Start,
-                        worden niet altijd volledig bijgewerkt.
-                      </p>
                     </div>
                   </div>
-
-                  {/* Andere resultaten */}
-                  {results.length > 1 && (
-                    <div className="mt-4 bg-[#181c27] border border-[#232838] rounded-2xl p-4">
-                      <p className="text-xs font-semibold tracking-wider uppercase text-[#9096a8] mb-3">
-                        Andere resultaten
-                      </p>
-                      <div className="flex gap-3 overflow-x-auto pb-1">
-                        {results.map((r, i) =>
-                          i === selectedIndex ? null : (
-                            <button
-                              key={r.titleId || i}
-                              onClick={() => selectResult(i)}
-                              className="flex items-center gap-2 px-3 py-2 rounded-xl bg-[#1e2332] border border-[#232838] hover:border-[#00f2fe]/60 transition-all shrink-0 text-left"
-                            >
-                              {r.poster ? (
-                                // eslint-disable-next-line @next/next/no-img-element
-                                <img
-                                  src={r.poster}
-                                  alt=""
-                                  loading="lazy"
-                                  decoding="async"
-                                  className="w-8 h-12 object-cover rounded flex-shrink-0"
-                                />
-                              ) : (
-                                <div className="w-8 h-12 bg-[#232838] rounded flex-shrink-0" />
-                              )}
-                              <span className="min-w-0">
-                                <span className="block text-xs font-medium text-[#f3f1ea] max-w-[120px] truncate">
-                                  {r.name}
-                                </span>
-                                <span className="block text-[10px] text-[#9096a8]">
-                                  {r.year ? r.year : ""}
-                                  {r.titleType
-                                    ? ` • ${r.titleType.includes("tv") ? "Serie" : "Film"}`
-                                    : ""}
-                                </span>
-                              </span>
-                            </button>
-                          )
-                        )}
-                      </div>
-                    </div>
-                  )}
                 </div>
               )}
             </div>
           </div>
         </div>
-      </div>
 
-      <footer className="relative mt-12 text-center text-[11px] text-[#565c6e] space-y-1">
-        <p>© {new Date().getFullYear()} Waar kan ik het kijken?</p>
-        <p>Gegevens aangeleverd door TMDB en Watchmode</p>
-      </footer>
+        <footer className="relative mt-12 text-center text-[11px] text-[#565c6e] space-y-1">
+          <p>© {new Date().getFullYear()} Waar kan ik het kijken?</p>
+          <p>Gegevens aangeleverd door TMDB en Watchmode</p>
+        </footer>
+      </div>
     </main>
   );
 }
