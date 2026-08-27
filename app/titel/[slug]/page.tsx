@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import Link from "next/link";
+import Image from "next/image";
 import { getTitleData } from "@/lib/streaming";
 import { MAJOR_PLATFORMS } from "@/lib/platforms";
 
@@ -87,12 +88,13 @@ export default async function TitlePage({
 
           <div className="relative overflow-hidden rounded-2xl border border-[#232838]">
             {data.backdrop && (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
+              <Image
                 src={data.backdrop}
                 alt=""
                 aria-hidden="true"
-                className="absolute inset-0 w-full h-full object-cover opacity-20"
+                fill
+                sizes="100vw"
+                className="object-cover opacity-20"
               />
             )}
             <div className="absolute inset-0 bg-gradient-to-t from-[#10131a] via-[#10131a]/85 to-[#10131a]/40" />
@@ -100,12 +102,15 @@ export default async function TitlePage({
             <div className="relative p-5 md:p-6">
               <div className="flex flex-col sm:flex-row gap-5">
                 {data.poster ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={data.poster}
-                    alt={`Poster van ${data.name}`}
-                    className="w-40 sm:w-44 mx-auto sm:mx-0 aspect-[2/3] object-cover rounded-xl border border-[#232838] shadow-lg shrink-0"
-                  />
+                  <div className="relative w-40 sm:w-44 mx-auto sm:mx-0 aspect-[2/3] rounded-xl overflow-hidden border border-[#232838] shadow-lg shrink-0">
+                    <Image
+                      src={data.poster}
+                      alt={`Poster van ${data.name}`}
+                      fill
+                      sizes="(max-width: 640px) 160px, 176px"
+                      className="object-cover"
+                    />
+                  </div>
                 ) : (
                   <div className="w-40 sm:w-44 mx-auto sm:mx-0 aspect-[2/3] rounded-xl border border-[#232838] bg-[#181c27] flex items-center justify-center text-xs text-[#9096a8] shrink-0">
                     geen foto
@@ -142,10 +147,11 @@ export default async function TitlePage({
                           className="flex items-center gap-3 p-3 rounded-xl bg-[#181c27]/90 border border-[#232838] hover:border-[#00f2fe]/60 transition-all group"
                         >
                           {match.logo ? (
-                            // eslint-disable-next-line @next/next/no-img-element
-                            <img
+                            <Image
                               src={match.logo}
                               alt={`${platform.label} logo`}
+                              width={36}
+                              height={36}
                               className="w-9 h-9 rounded-lg bg-white p-1.5 object-contain shrink-0"
                             />
                           ) : (
@@ -214,12 +220,15 @@ export default async function TitlePage({
                     className="w-32 shrink-0 text-left group block"
                   >
                     {s.poster ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
-                        src={s.poster}
-                        alt={`${s.name} poster`}
-                        className="w-32 aspect-[2/3] object-cover rounded-xl border border-[#232838] group-hover:border-[#00f2fe]/60 group-hover:scale-[1.03] transition-all"
-                      />
+                      <div className="relative w-32 aspect-[2/3] rounded-xl overflow-hidden border border-[#232838] group-hover:border-[#00f2fe]/60 group-hover:scale-[1.03] transition-all">
+                        <Image
+                          src={s.poster}
+                          alt={`${s.name} poster`}
+                          fill
+                          sizes="128px"
+                          className="object-cover"
+                        />
+                      </div>
                     ) : (
                       <div className="w-32 aspect-[2/3] rounded-xl bg-[#181c27] border border-[#232838]" />
                     )}
