@@ -198,10 +198,12 @@ export async function GET(request: NextRequest) {
         rawResults = rawResults.filter((item) => item.media_type === typeFilter);
       }
 
+      // Filter items zonder poster weg en sorteer op populariteit
+      rawResults = rawResults.filter((item) => item.poster_path);
       rawResults.sort((a, b) => (b.popularity || 0) - (a.popularity || 0));
       
-      // Bij bladeren of zoeken: pak de top 10 i.p.v. max 5
-      const limit = (!query && (platformFilter || typeFilter)) ? 10 : 5;
+      // Als er een zoekopdracht is, pak direct alleen de nummer 1 (geen keuzerij meer)
+      const limit = query ? 1 : (platformFilter || typeFilter) ? 10 : 5;
       const tmdbResults = rawResults.slice(0, limit);
 
       matches = await Promise.all(
@@ -210,15 +212,12 @@ export async function GET(request: NextRequest) {
           const title = (isTv ? item.name : item.title) ?? "";
           const releaseDate = isTv ? item.first_air_date : item.release_date;
           const year = releaseDate ? parseInt(releaseDate.split("-")[0]) : null;
-          const poster = item.poster_path
-            ? `https://image.tmdb.org/t/p/w500${item.poster_path}`
-            : null;
+          const poster = `https://image.tmdb.org/t/p/w500${item.poster_path}`;
           const backdrop = item.backdrop_path
             ? `https://image.tmdb.org/t/p/w780${item.backdrop_path}`
             : null;
 
           let watchmodeId: number | null = null;
-          // Haal watchmode bronnen op voor het geselecteerde item
           if (!suggestOnly && index === selectIndex) {
             try {
               const wmSearch = await fetch(
@@ -254,7 +253,7 @@ export async function GET(request: NextRequest) {
         { next: { revalidate: CACHE_REVALIDATE } }
       );
       const searchData = await searchRes.json();
-      matches = (searchData?.title_results || []).slice(0, 10).map(
+      matches = (searchData?.title_results || []).slice(0, 1).map(
         (m: WatchmodeTitleResult): SearchMatch => ({
           id: m.id,
           watchmodeId: m.id,

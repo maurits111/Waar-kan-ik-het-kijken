@@ -14,10 +14,7 @@ export const MAJOR_PLATFORMS: Platform[] = [
   { id: "apple", label: "Apple TV+", match: "apple", color: "#7C7C82", abbr: "AT" },
   { id: "videoland", label: "Videoland", match: "videoland", color: "#D90A6C", abbr: "VL" },
   { id: "nlziet", label: "NLZIET", match: "nlziet", color: "#2D6CDF", abbr: "NL" },
-  { id: "sooner", label: "Sooner", match: "sooner", color: "#7B4BFF", abbr: "SO" },
-  { id: "mubi", label: "MUBI", match: "mubi", color: "#C88A00", abbr: "MU" },
   { id: "pathe", label: "Pathé Thuis", match: "path", color: "#E30613", abbr: "PT" },
-  { id: "showtime", label: "SkyShowtime", match: "showtime", color: "#00C2A8", abbr: "SS" },
   { id: "npo", label: "NPO Start", match: "npo", color: "#D99E00", abbr: "NP" },
 ];
 

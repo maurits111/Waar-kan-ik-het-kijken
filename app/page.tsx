@@ -364,9 +364,23 @@ export default function Home() {
             <span className="inline-block text-[10px] tracking-widest uppercase px-3 py-1.5 rounded-full bg-[#00f2fe]/10 text-[#00f2fe] font-semibold border border-[#00f2fe]/20">
               Streaming Zoekmachine
             </span>
-            <h1 className="text-4xl md:text-6xl font-bold mt-5 mb-3 tracking-tight bg-gradient-to-r from-[#00f2fe] via-[#5eead4] to-[#3b82f6] bg-clip-text text-transparent">
-              Waar kan ik het kijken?
-            </h1>
+            
+            <Link 
+              href="/" 
+              onClick={() => {
+                setQuery("");
+                setResults([]);
+                setError(null);
+                setSelectedPlatform("");
+                setSelectedType("");
+              }}
+              className="inline-block cursor-pointer group"
+            >
+              <h1 className="text-4xl md:text-6xl font-bold mt-5 mb-3 tracking-tight bg-gradient-to-r from-[#00f2fe] via-[#5eead4] to-[#3b82f6] bg-clip-text text-transparent group-hover:opacity-90 transition-opacity">
+                Waar kan ik het kijken?
+              </h1>
+            </Link>
+
             <p className="text-sm md:text-base text-[#9096a8] max-w-lg mx-auto">
               Typ de naam van een film of serie of kies een dienst om direct te ontdekken wat erop staat.
             </p>
@@ -781,11 +795,6 @@ export default function Home() {
             </div>
           </div>
         </div>
-
-        <footer className="relative mt-12 text-center text-[11px] text-[#565c6e] space-y-1">
-          <p>© {new Date().getFullYear()} Waar kan ik het kijken?</p>
-          <p>Gegevens aangeleverd door TMDB en Watchmode</p>
-        </footer>
       </div>
     </main>
   );
