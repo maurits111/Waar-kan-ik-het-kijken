@@ -360,7 +360,7 @@ export default function Home() {
 
       <div className="w-full relative flex-1 flex flex-col">
         <div className="my-auto w-full py-4">
-          <div className="max-w-4xl mx-auto text-center mb-10">
+          <div className="max-w-4xl mx-auto text-center mb-10 flex flex-col items-center">
             <span className="inline-block text-[10px] tracking-widest uppercase px-3 py-1.5 rounded-full bg-[#00f2fe]/10 text-[#00f2fe] font-semibold border border-[#00f2fe]/20">
               Streaming Zoekmachine
             </span>
@@ -374,9 +374,9 @@ export default function Home() {
                 setSelectedPlatform("");
                 setSelectedType("");
               }}
-              className="inline-block cursor-pointer group"
+              className="inline-block cursor-pointer group mt-5 mb-3"
             >
-              <h1 className="text-4xl md:text-6xl font-bold mt-5 mb-3 tracking-tight bg-gradient-to-r from-[#00f2fe] via-[#5eead4] to-[#3b82f6] bg-clip-text text-transparent group-hover:opacity-90 transition-opacity">
+              <h1 className="text-4xl md:text-6xl font-bold tracking-tight bg-gradient-to-r from-[#00f2fe] via-[#5eead4] to-[#3b82f6] bg-clip-text text-transparent group-hover:opacity-90 transition-opacity">
                 Waar kan ik het kijken?
               </h1>
             </Link>
