@@ -52,7 +52,6 @@ export default async function Image() {
           style={{
             fontSize: 64,
             fontWeight: 'bold',
-            color: '#f3f1ea',
             lineHeight: 1.1,
             marginBottom: '20px',
             backgroundImage: 'linear-gradient(to right, #00f2fe, #5eead4, #3b82f6)',
