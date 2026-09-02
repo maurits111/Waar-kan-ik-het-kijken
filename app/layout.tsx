@@ -4,13 +4,13 @@ import { Analytics } from "@vercel/analytics/react";
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://waarkanikhetkijken.com"),
-  title: "Waar kan ik het kijken?",
+  title: "Waar kan ik het kijken? - Vind al je films en series",
   description:
-    "Zoek een titel en zie direct op welke streamingdiensten het beschikbaar is.",
+    "Ontdek direct op welke streamingdienst (zoals Netflix, Disney+, Videoland) jouw favoriete film of serie beschikbaar is.",
   openGraph: {
-    title: "Waar kan ik het kijken?",
+    title: "Waar kan ik het kijken? - Vind al je films en series",
     description:
-      "Zoek een titel en zie direct op welke streamingdiensten het beschikbaar is.",
+      "Ontdek direct op welke streamingdienst (zoals Netflix, Disney+, Videoland) jouw favoriete film of serie beschikbaar is.",
     url: "https://waarkanikhetkijken.com",
     siteName: "Waar kan ik het kijken?",
     locale: "nl_NL",
