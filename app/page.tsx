@@ -6,21 +6,13 @@ import Link from "next/link";
 
 const REGION = "NL";
 const RECENT_KEY = "waarkijk-recent";
+const WATCHLIST_KEY = "my_watchlist";
 
 const TYPE_LABELS: Record<string, string> = {
   sub: "Abonnement",
   rent: "Huur",
   buy: "Koop",
 };
-
-const POPULAR_SUGGESTIONS = [
-  "The Bear",
-  "Stranger Things",
-  "Dune",
-  "Game of Thrones",
-  "Breaking Bad",
-  "The Last of Us",
-];
 
 interface Source {
   name: string;
@@ -31,6 +23,7 @@ interface Source {
 
 interface StreamingResult {
   titleId?: number;
+  id?: number;
   name: string;
   year: number | string | null;
   poster: string | null;
@@ -79,6 +72,57 @@ export default function Home() {
   const [loadingSources, setLoadingSources] = useState(false);
   const [lastLoadedIndex, setLastLoadedIndex] = useState(0);
 
+  // Watchlist State
+  const [watchlist, setWatchlist] = useState<any[]>([]);
+
+  useEffect(() => {
+    const saved = localStorage.getItem(WATCHLIST_KEY);
+    if (saved) {
+      try {
+        setWatchlist(JSON.parse(saved));
+      } catch {}
+    }
+  }, []);
+
+  const getItemId = (item: any) => {
+    return String(item.titleId || item.id || "");
+  };
+
+  const toggleWatchlist = (item: any) => {
+    const cleanId = getItemId(item);
+    if (!cleanId) return;
+
+    const normalizedItem = {
+      ...item,
+      id: item.id || item.titleId,
+      titleId: item.titleId || item.id,
+    };
+
+    setWatchlist((prevWatchlist) => {
+      const exists = prevWatchlist.some((w) => getItemId(w) === cleanId);
+      let updated;
+
+      if (exists) {
+        updated = prevWatchlist.filter((w) => getItemId(w) !== cleanId);
+      } else {
+        updated = [...prevWatchlist, normalizedItem];
+      }
+
+      try {
+        localStorage.setItem(WATCHLIST_KEY, JSON.stringify(updated));
+      } catch (e) {
+        console.error("Fout bij opslaan watchlist:", e);
+      }
+
+      return updated;
+    });
+  };
+
+  const isItemInWatchlist = (item: any) => {
+    const cleanId = getItemId(item);
+    return watchlist.some((w) => getItemId(w) === cleanId);
+  };
+
   const searchContainerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const searchedQueryRef = useRef("");
@@ -125,13 +169,8 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    if (query.trim().length < 3) {
-      return;
-    }
-    
-    if (query === searchedQueryRef.current) {
-      return;
-    }
+    if (query.trim().length < 3) return;
+    if (query === searchedQueryRef.current) return;
 
     const controller = new AbortController();
     const timer = setTimeout(async () => {
@@ -148,14 +187,10 @@ export default function Home() {
           setActiveIndex(-1);
         }
       } catch (err) {
-        if (err instanceof DOMException && err.name === "AbortError") {
-          return;
-        }
+        if (err instanceof DOMException && err.name === "AbortError") return;
         console.error("Fout bij ophalen suggesties:", err);
       } finally {
-        if (!controller.signal.aborted) {
-          setIsSuggesting(false);
-        }
+        if (!controller.signal.aborted) setIsSuggesting(false);
       }
     }, 300);
 
@@ -197,9 +232,7 @@ export default function Home() {
       const res = await fetch(url);
       const data = await res.json();
 
-      if (!res.ok) {
-        throw new Error(data.error || "Er is iets misgegaan");
-      }
+      if (!res.ok) throw new Error(data.error || "Er is iets misgegaan");
 
       if (data.results && data.results.length > 0) {
         const safeIndex = Math.min(select, data.results.length - 1);
@@ -233,12 +266,9 @@ export default function Home() {
     if (!item) return;
     setSelectedIndex(index);
 
-    if (index === lastLoadedIndex && (item.sources?.length ?? 0) > 0) {
-      return;
-    }
+    if (index === lastLoadedIndex && (item.sources?.length ?? 0) > 0) return;
 
     setLoadingSources(true);
-    
     let url = `/api/search?region=${REGION}&select=${index}`;
     if (searchedQueryRef.current.trim()) {
       url += `&q=${encodeURIComponent(searchedQueryRef.current)}`;
@@ -261,7 +291,6 @@ export default function Home() {
   useEffect(() => {
     const t = window.setTimeout(() => {
       setRecent(loadRecentSearches());
-
       const params = new URLSearchParams(window.location.search);
       const q = params.get("q");
       if (q) {
@@ -279,15 +308,11 @@ export default function Home() {
     fetch("/api/trending")
       .then((res) => res.json())
       .then((data) => {
-        if (!cancelled && data.results) {
-          setTrending(data.results);
-        }
+        if (!cancelled && data.results) setTrending(data.results);
       })
       .catch(() => {})
       .finally(() => {
-        if (!cancelled) {
-          setTrendingLoading(false);
-        }
+        if (!cancelled) setTrendingLoading(false);
       });
 
     return () => {
@@ -349,6 +374,7 @@ export default function Home() {
 
   return (
     <main className="min-h-screen bg-[#10131a] text-[#f3f1ea] p-6 md:p-12 relative overflow-hidden flex flex-col">
+      {/* Achtergrond gloed */}
       <div
         aria-hidden="true"
         className="pointer-events-none absolute -top-40 left-1/2 -translate-x-1/2 w-[600px] h-[600px] rounded-full bg-[#00f2fe]/[0.05] blur-3xl"
@@ -360,29 +386,16 @@ export default function Home() {
 
       <div className="w-full relative flex-1 flex flex-col">
         <div className="my-auto w-full py-4">
-          <div className="max-w-4xl mx-auto text-center mb-10 flex flex-col items-center">
-            <span className="inline-block text-[10px] tracking-widest uppercase px-3 py-1.5 rounded-full bg-[#00f2fe]/10 text-[#00f2fe] font-semibold border border-[#00f2fe]/20">
+
+          <div className="max-w-4xl mx-auto text-center mb-8 flex flex-col items-center">
+            <span className="inline-block text-[10px] tracking-widest uppercase px-3 py-1.5 rounded-full bg-[#00f2fe]/10 text-[#00f2fe] font-semibold border border-[#00f2fe]/20 mb-3">
               Streaming Zoekmachine
             </span>
-            
-            <Link 
-              href="/" 
-              onClick={() => {
-                setQuery("");
-                setResults([]);
-                setError(null);
-                setSelectedPlatform("");
-                setSelectedType("");
-              }}
-              className="inline-block cursor-pointer group mt-5 mb-3"
-            >
-              <h1 className="text-4xl md:text-6xl font-bold tracking-tight bg-gradient-to-r from-[#00f2fe] via-[#5eead4] to-[#3b82f6] bg-clip-text text-transparent group-hover:opacity-90 transition-opacity">
-                Waar kan ik het kijken?
-              </h1>
-            </Link>
-
+            <h1 className="text-3xl md:text-5xl font-bold tracking-tight text-[#f3f1ea] mb-3">
+              Vind direct waar jouw favoriete film of serie streamt
+            </h1>
             <p className="text-sm md:text-base text-[#9096a8] max-w-lg mx-auto">
-              Typ de naam van een film of serie of kies een dienst om direct te ontdekken wat erop staat.
+              Typ de naam van een titel hieronder of kies een dienst om te ontdekken waar je kunt kijken.
             </p>
           </div>
 
@@ -395,7 +408,7 @@ export default function Home() {
               <form
                 role="search"
                 onSubmit={handleSearch}
-                className="space-y-3 bg-[#181c27] border border-[#232838] rounded-2xl p-5 relative"
+                className="space-y-3 bg-[#181c27] border border-[#232838] rounded-2xl p-5 relative shadow-xl"
               >
                 <div className="relative">
                   <input
@@ -413,7 +426,7 @@ export default function Home() {
                     }}
                     onFocus={() => query.trim().length >= 3 && setShowDropdown(true)}
                     onKeyDown={handleKeyDown}
-                    placeholder="Typ een titel of laat leeg om te bladeren..."
+                    placeholder="Bijv. Interstellar, Breaking Bad..."
                     aria-label="Zoek een film of serie"
                     role="combobox"
                     aria-expanded={showDropdown}
@@ -422,7 +435,7 @@ export default function Home() {
                     aria-activedescendant={
                       activeIndex >= 0 ? `suggestie-${activeIndex}` : undefined
                     }
-                    className="w-full h-11 px-4 rounded-lg border border-[#232838] bg-[#1e2332] text-sm focus:border-[#00f2fe]"
+                    className="w-full h-11 px-4 rounded-lg border border-[#232838] bg-[#1e2332] text-sm focus:border-[#00f2fe] outline-none text-[#f3f1ea]"
                   />
 
                   {showDropdown && (
@@ -439,7 +452,7 @@ export default function Home() {
                       ) : suggestions.length > 0 ? (
                         sortedSuggestions.map((item, index) => (
                           <button
-                            key={item.titleId || index}
+                            key={getItemId(item) || index}
                             id={`suggestie-${index}`}
                             type="button"
                             role="option"
@@ -455,7 +468,6 @@ export default function Home() {
                                 src={item.poster}
                                 alt={item.name}
                                 loading="lazy"
-                                decoding="async"
                                 className="w-8 h-11 object-cover rounded flex-shrink-0"
                               />
                             ) : (
@@ -567,33 +579,47 @@ export default function Home() {
                         </div>
                       ))
                     ) : (
-                      trending.map((t) => (
-                        <Link
-                          key={`${t.media_type}-${t.id}`}
-                          href={`/titel/${t.media_type}-${t.id}`}
-                          className="w-32 shrink-0 text-left group block"
-                        >
-                          {t.poster ? (
-                            // eslint-disable-next-line @next/next/no-img-element
-                            <img
-                              src={t.poster}
-                              alt={`${t.name} poster`}
-                              loading="lazy"
-                              decoding="async"
-                              className="w-32 aspect-[2/3] object-cover rounded-xl border border-[#232838] group-hover:border-[#00f2fe]/60 group-hover:scale-[1.03] transition-all"
-                            />
-                          ) : (
-                            <div className="w-32 aspect-[2/3] rounded-xl bg-[#181c27] border border-[#232838]" />
-                          )}
-                          <p className="mt-2 text-xs font-medium text-[#f3f1ea] truncate">
-                            {t.name}
-                          </p>
-                          <p className="text-[10px] text-[#9096a8]">
-                            {t.year || ""}
-                            {t.media_type === "tv" ? " • Serie" : " • Film"}
-                          </p>
-                        </Link>
-                      ))
+                      trending.map((t) => {
+                        const itemObj = { ...t, titleId: t.id };
+                        const isSaved = isItemInWatchlist(itemObj);
+                        return (
+                          <div key={`${t.media_type}-${t.id}`} className="w-32 shrink-0 text-left group flex flex-col justify-between">
+                            <Link
+                              href={`/titel/${t.media_type}-${t.id}`}
+                              className="block"
+                            >
+                              {t.poster ? (
+                                // eslint-disable-next-line @next/next/no-img-element
+                                <img
+                                  src={t.poster}
+                                  alt={`${t.name} poster`}
+                                  loading="lazy"
+                                  className="w-32 aspect-[2/3] object-cover rounded-xl border border-[#232838] group-hover:border-[#00f2fe]/60 group-hover:scale-[1.03] transition-all"
+                                />
+                              ) : (
+                                <div className="w-32 aspect-[2/3] rounded-xl bg-[#181c27] border border-[#232838]" />
+                              )}
+                              <p className="mt-2 text-xs font-medium text-[#f3f1ea] truncate">
+                                {t.name}
+                              </p>
+                              <p className="text-[10px] text-[#9096a8]">
+                                {t.year || ""}
+                                {t.media_type === "tv" ? " • Serie" : " • Film"}
+                              </p>
+                            </Link>
+                            <button
+                              onClick={() => toggleWatchlist(itemObj)}
+                              className={`mt-2 w-full py-1 text-[11px] font-medium rounded transition-colors cursor-pointer ${
+                                isSaved
+                                  ? "bg-red-500/20 text-red-400 border border-red-500/30 hover:bg-red-500/30"
+                                  : "bg-[#1e2332] text-[#9096a8] border border-[#232838] hover:border-[#00f2fe] hover:text-[#00f2fe]"
+                              }`}
+                            >
+                              {isSaved ? "✓ In Watchlist" : "+ Watchlist"}
+                            </button>
+                          </div>
+                        );
+                      })
                     )}
                   </div>
                 </section>
@@ -618,50 +644,65 @@ export default function Home() {
                 </div>
               )}
 
-              {/* Resultatenlijst (als er meerdere zijn) */}
               {!loading && results.length > 1 && (
                 <div className="mt-6">
                   <p className="text-xs font-semibold tracking-wider uppercase text-[#9096a8] mb-3">
                     Top keuzes ({results.length}) - Klik op een titel voor details
                   </p>
                   <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
-                    {results.map((item, index) => (
-                      <button
-                        key={item.titleId || index}
-                        onClick={() => selectResult(index)}
-                        className={`text-left group p-2 rounded-xl border transition-all cursor-pointer ${
-                          selectedIndex === index
-                            ? "bg-[#1e2332] border-[#00f2fe]"
-                            : "bg-[#181c27] border-[#232838] hover:border-[#00f2fe]/50"
-                        }`}
-                      >
-                        {item.poster ? (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img
-                            src={item.poster}
-                            alt={item.name}
-                            loading="lazy"
-                            decoding="async"
-                            className="w-full aspect-[2/3] object-cover rounded-lg mb-2"
-                          />
-                        ) : (
-                          <div className="w-full aspect-[2/3] bg-[#1e2332] rounded-lg mb-2 flex items-center justify-center text-[10px] text-[#9096a8]">
-                            Geen foto
-                          </div>
-                        )}
-                        <p className="text-xs font-medium text-[#f3f1ea] truncate">
-                          {item.name}
-                        </p>
-                        <p className="text-[10px] text-[#9096a8]">
-                          {item.year || ""} {item.titleType?.includes("tv") ? "• Serie" : "• Film"}
-                        </p>
-                      </button>
-                    ))}
+                    {results.map((item, index) => {
+                      const isSaved = isItemInWatchlist(item);
+                      return (
+                        <div
+                          key={getItemId(item) || index}
+                          className={`flex flex-col justify-between group p-2 rounded-xl border transition-all ${
+                            selectedIndex === index
+                              ? "bg-[#1e2332] border-[#00f2fe]"
+                              : "bg-[#181c27] border-[#232838] hover:border-[#00f2fe]/50"
+                          }`}
+                        >
+                          <button
+                            onClick={() => selectResult(index)}
+                            className="text-left w-full cursor-pointer flex-1"
+                          >
+                            {item.poster ? (
+                              // eslint-disable-next-line @next/next/no-img-element
+                              <img
+                                src={item.poster}
+                                alt={item.name}
+                                loading="lazy"
+                                className="w-full aspect-[2/3] object-cover rounded-lg mb-2"
+                              />
+                            ) : (
+                              <div className="w-full aspect-[2/3] bg-[#1e2332] rounded-lg mb-2 flex items-center justify-center text-[10px] text-[#9096a8]">
+                                Geen foto
+                              </div>
+                            )}
+                            <p className="text-xs font-medium text-[#f3f1ea] truncate">
+                              {item.name}
+                            </p>
+                            <p className="text-[10px] text-[#9096a8]">
+                              {item.year || ""} {item.titleType?.includes("tv") ? "• Serie" : "• Film"}
+                            </p>
+                          </button>
+
+                          <button
+                            onClick={() => toggleWatchlist(item)}
+                            className={`mt-2 w-full py-1 text-[11px] font-medium rounded transition-colors cursor-pointer ${
+                              isSaved
+                                ? "bg-red-500/20 text-red-400 border border-red-500/30 hover:bg-red-500/30"
+                                : "bg-[#1e2332] text-[#9096a8] border border-[#232838] hover:border-[#00f2fe] hover:text-[#00f2fe]"
+                            }`}
+                          >
+                            {isSaved ? "✓ In Watchlist" : "+ Watchlist"}
+                          </button>
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               )}
 
-              {/* Detailweergave voor het geselecteerde item */}
               {result && (
                 <div aria-live="polite" className="mt-6">
                   <div className="relative overflow-hidden rounded-2xl border border-[#232838]">
@@ -672,7 +713,6 @@ export default function Home() {
                         alt=""
                         aria-hidden="true"
                         loading="lazy"
-                        decoding="async"
                         className="absolute inset-0 w-full h-full object-cover opacity-20"
                       />
                     )}
@@ -680,20 +720,33 @@ export default function Home() {
 
                     <div className="relative p-5 md:p-6">
                       <div className="flex flex-col sm:flex-row gap-5">
-                        {result.poster ? (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img
-                            src={result.poster}
-                            alt={`Poster van ${result.name}`}
-                            loading="lazy"
-                            decoding="async"
-                            className="w-40 sm:w-44 mx-auto sm:mx-0 aspect-[2/3] object-cover rounded-xl border border-[#232838] shadow-lg shrink-0"
-                          />
-                        ) : (
-                          <div className="w-40 sm:w-44 mx-auto sm:mx-0 aspect-[2/3] rounded-xl border border-[#232838] bg-[#181c27] flex items-center justify-center text-xs text-[#9096a8] shrink-0">
-                            geen foto
-                          </div>
-                        )}
+                        <div className="flex flex-col items-center sm:items-start shrink-0">
+                          {result.poster ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img
+                              src={result.poster}
+                              alt={`Poster van ${result.name}`}
+                              loading="lazy"
+                              className="w-40 sm:w-44 mx-auto sm:mx-0 aspect-[2/3] object-cover rounded-xl border border-[#232838] shadow-lg shrink-0"
+                            />
+                          ) : (
+                            <div className="w-40 sm:w-44 mx-auto sm:mx-0 aspect-[2/3] rounded-xl border border-[#232838] bg-[#181c27] flex items-center justify-center text-xs text-[#9096a8] shrink-0">
+                              geen foto
+                            </div>
+                          )}
+                          <button
+                            onClick={() => toggleWatchlist(result)}
+                            className={`mt-3 w-full py-1.5 px-3 text-xs font-medium rounded-lg transition-colors cursor-pointer ${
+                              isItemInWatchlist(result)
+                                ? "bg-red-500/20 text-red-400 border border-red-500/30 hover:bg-red-500/30"
+                                : "bg-[#1e2332] text-[#f3f1ea] border border-[#232838] hover:border-[#00f2fe] hover:text-[#00f2fe]"
+                            }`}
+                          >
+                            {isItemInWatchlist(result)
+                              ? "✓ In Watchlist"
+                              : "+ Voeg toe aan Watchlist"}
+                          </button>
+                        </div>
 
                         <div className="flex-1 min-w-0">
                           <div className="mb-4">
@@ -730,60 +783,59 @@ export default function Home() {
                           ) : (
                             <div className="grid grid-cols-2 lg:grid-cols-3 gap-2">
                               {MAJOR_PLATFORMS.map((platform) => {
-                              const match = findBestSource(result.sources, platform);
-                              return match ? (
-                                <a
-                                  key={platform.id}
-                                  href={match.webUrl}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="flex items-center gap-3 p-3 rounded-xl bg-[#181c27]/90 border border-[#232838] hover:border-[#00f2fe]/60 transition-all group"
-                                >
-                                  {match.logo ? (
-                                    // eslint-disable-next-line @next/next/no-img-element
-                                    <img
-                                      src={match.logo}
-                                      alt={`${platform.label} logo`}
-                                      loading="lazy"
-                                      decoding="async"
-                                      className="w-9 h-9 rounded-lg bg-white p-1.5 object-contain shrink-0"
-                                    />
-                                  ) : (
-                                    <span
-                                      className="w-9 h-9 rounded-lg flex items-center justify-center text-[10px] font-bold text-white shadow-md shrink-0"
-                                      style={{ backgroundColor: platform.color }}
-                                    >
+                                const match = findBestSource(result.sources, platform);
+                                return match ? (
+                                  <a
+                                    key={platform.id}
+                                    href={match.webUrl}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="flex items-center gap-3 p-3 rounded-xl bg-[#181c27]/90 border border-[#232838] hover:border-[#00f2fe]/60 transition-all group"
+                                  >
+                                    {match.logo ? (
+                                      // eslint-disable-next-line @next/next/no-img-element
+                                      <img
+                                        src={match.logo}
+                                        alt={`${platform.label} logo`}
+                                        loading="lazy"
+                                        className="w-9 h-9 rounded-lg bg-white p-1.5 object-contain shrink-0"
+                                      />
+                                    ) : (
+                                      <span
+                                        className="w-9 h-9 rounded-lg flex items-center justify-center text-[10px] font-bold text-white shadow-md shrink-0"
+                                        style={{ backgroundColor: platform.color }}
+                                      >
+                                        {platform.abbr}
+                                      </span>
+                                    )}
+                                    <span className="flex-1 min-w-0">
+                                      <span className="block text-sm font-medium text-[#f3f1ea] truncate">
+                                        {platform.label}
+                                      </span>
+                                      <span className="block text-[10px] uppercase tracking-wide text-[#00f2fe]">
+                                        {typeLabel(match.type)}
+                                      </span>
+                                    </span>
+                                  </a>
+                                ) : (
+                                  <div
+                                    key={platform.id}
+                                    className="flex items-center gap-3 p-3 rounded-xl bg-[#151922] border border-[#232838]/40"
+                                  >
+                                    <span className="w-9 h-9 rounded-lg bg-[#232838] flex items-center justify-center text-[10px] text-[#565c6e] shrink-0">
                                       {platform.abbr}
                                     </span>
-                                  )}
-                                  <span className="flex-1 min-w-0">
-                                    <span className="block text-sm font-medium text-[#f3f1ea] truncate">
-                                      {platform.label}
+                                    <span className="flex-1 min-w-0">
+                                      <span className="block text-sm text-[#9096a8] truncate">
+                                        {platform.label}
+                                      </span>
+                                      <span className="block text-[10px] uppercase tracking-wide text-[#565c6e]">
+                                        Niet beschikbaar
+                                      </span>
                                     </span>
-                                    <span className="block text-[10px] uppercase tracking-wide text-[#00f2fe]">
-                                      {typeLabel(match.type)}
-                                    </span>
-                                  </span>
-                                </a>
-                              ) : (
-                                <div
-                                  key={platform.id}
-                                  className="flex items-center gap-3 p-3 rounded-xl bg-[#151922] border border-[#232838]/40"
-                                >
-                                  <span className="w-9 h-9 rounded-lg bg-[#232838] flex items-center justify-center text-[10px] text-[#565c6e] shrink-0">
-                                    {platform.abbr}
-                                  </span>
-                                  <span className="flex-1 min-w-0">
-                                    <span className="block text-sm text-[#9096a8] truncate">
-                                      {platform.label}
-                                    </span>
-                                    <span className="block text-[10px] text-[#565c6e]">
-                                      Niet beschikbaar
-                                    </span>
-                                  </span>
-                                </div>
-                              );
-                            })}
+                                  </div>
+                                );
+                              })}
                             </div>
                           )}
                         </div>
