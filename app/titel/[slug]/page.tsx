@@ -216,6 +216,7 @@ export default async function TitlePage({
                 {data.similar.map((s) => (
                   <Link
                     key={s.tmdbId}
+                    prefetch={false}
                     href={`/titel/${s.titleType === "tv_series" ? "tv" : "movie"}-${s.tmdbId}`}
                     className="w-32 shrink-0 text-left group block"
                   >
