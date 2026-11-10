@@ -6,6 +6,9 @@ const TMDB_API_KEY = process.env.TMDB_API_KEY;
 const WATCHMODE_BASE = "https://api.watchmode.com/v1";
 const CACHE_REVALIDATE = 86400;
 
+const WATCHMODE_UNAVAILABLE_MESSAGE =
+  "De streaminggegevens zijn tijdelijk niet beschikbaar. Probeer het later opnieuw.";
+
 type TmdbProvider = {
   provider_id?: number;
   provider_name?: string;
@@ -51,7 +54,8 @@ async function getTmdbProviderId(platformMatch: string): Promise<number | null> 
   if (!TMDB_API_KEY) return null;
   try {
     const res = await fetch(
-      `https://api.themoviedb.org/3/watch/providers/movie?api_key=${TMDB_API_KEY}&language=nl-NL&watch_region=NL`
+      `https://api.themoviedb.org/3/watch/providers/movie?api_key=${TMDB_API_KEY}&language=nl-NL&watch_region=NL`,
+      { next: { revalidate: CACHE_REVALIDATE } }
     );
     const data = await res.json();
     const providers = (data?.results ?? []) as TmdbProvider[];
@@ -119,7 +123,9 @@ export type StreamingResult = {
 
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
-  const query = searchParams.get("q");
+  // Spaties eraf en kleine letters, zodat dezelfde titel altijd dezelfde
+  // bewaarde zoekopdracht (cache) gebruikt.
+  const query = searchParams.get("q")?.trim().toLowerCase() || null;
   const region = searchParams.get("region") ?? "NL";
   const platformFilter = searchParams.get("platform");
   const typeFilter = searchParams.get("type");
@@ -146,6 +152,9 @@ export async function GET(request: NextRequest) {
 
   try {
     let matches: SearchMatch[] = [];
+    // Wordt true als Watchmode een fout geeft (bijv. quota op), zodat we
+    // dat kunnen melden in plaats van overal "niet beschikbaar" te tonen.
+    let watchmodeFailed = false;
 
     if (TMDB_API_KEY) {
       let rawResults: TmdbItem[] = [];
@@ -201,7 +210,7 @@ export async function GET(request: NextRequest) {
       // Filter items zonder poster weg en sorteer op populariteit
       rawResults = rawResults.filter((item) => item.poster_path);
       rawResults.sort((a, b) => (b.popularity || 0) - (a.popularity || 0));
-      
+
       // Als er een zoekopdracht is, pak direct alleen de nummer 1 (geen keuzerij meer)
       const limit = query ? 1 : (platformFilter || typeFilter) ? 10 : 5;
       const tmdbResults = rawResults.slice(0, limit);
@@ -226,9 +235,14 @@ export async function GET(request: NextRequest) {
                 }_id&search_value=${item.id}`,
                 { next: { revalidate: CACHE_REVALIDATE } }
               );
-              const wmData = await wmSearch.json();
-              watchmodeId = wmData?.title_results?.[0]?.id ?? null;
+              if (!wmSearch.ok) {
+                watchmodeFailed = true;
+              } else {
+                const wmData = await wmSearch.json();
+                watchmodeId = wmData?.title_results?.[0]?.id ?? null;
+              }
             } catch {
+              watchmodeFailed = true;
               watchmodeId = null;
             }
           }
@@ -252,6 +266,9 @@ export async function GET(request: NextRequest) {
         )}`,
         { next: { revalidate: CACHE_REVALIDATE } }
       );
+      if (!searchRes.ok) {
+        watchmodeFailed = true;
+      }
       const searchData = await searchRes.json();
       matches = (searchData?.title_results || []).slice(0, 1).map(
         (m: WatchmodeTitleResult): SearchMatch => ({
@@ -264,6 +281,13 @@ export async function GET(request: NextRequest) {
           backdrop: null,
           popularity: 0,
         })
+      );
+    }
+
+    if (watchmodeFailed) {
+      return NextResponse.json(
+        { error: WATCHMODE_UNAVAILABLE_MESSAGE },
+        { status: 503 }
       );
     }
 
@@ -290,19 +314,23 @@ export async function GET(request: NextRequest) {
             );
             const sourcesData = await sourcesRes.json();
 
-            sources = (Array.isArray(sourcesData) ? sourcesData : [])
-              .filter((s: WmSource) => s.region === region)
-              .map((s) => {
-                const platform = findPlatform(s.name);
-                return {
-                  name: s.name,
-                  type: s.type,
-                  webUrl: s.web_url,
-                  logo: platform ? providerLogos[platform.id] ?? null : null,
-                };
-              });
+            if (!sourcesRes.ok || !Array.isArray(sourcesData)) {
+              watchmodeFailed = true;
+            } else {
+              sources = sourcesData
+                .filter((s: WmSource) => s.region === region)
+                .map((s: WmSource) => {
+                  const platform = findPlatform(s.name);
+                  return {
+                    name: s.name,
+                    type: s.type,
+                    webUrl: s.web_url,
+                    logo: platform ? providerLogos[platform.id] ?? null : null,
+                  };
+                });
+            }
           } catch {
-            sources = [];
+            watchmodeFailed = true;
           }
         }
 
@@ -318,6 +346,13 @@ export async function GET(request: NextRequest) {
         };
       })
     );
+
+    if (watchmodeFailed) {
+      return NextResponse.json(
+        { error: WATCHMODE_UNAVAILABLE_MESSAGE },
+        { status: 503 }
+      );
+    }
 
     return NextResponse.json({ results });
   } catch (err) {
