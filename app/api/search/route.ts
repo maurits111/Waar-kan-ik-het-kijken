@@ -113,6 +113,9 @@ export type StreamingResult = {
   backdrop: string | null;
   titleType: string | null;
   popularity: number;
+  // true als Watchmode een fout gaf (bijv. quota op): we kennen dan de
+  // beschikbaarheid niet, maar tonen wel titel en poster.
+  sourcesUnavailable?: boolean;
   sources: {
     name: string;
     type: string;
@@ -152,8 +155,7 @@ export async function GET(request: NextRequest) {
 
   try {
     let matches: SearchMatch[] = [];
-    // Wordt true als Watchmode een fout geeft (bijv. quota op), zodat we
-    // dat kunnen melden in plaats van overal "niet beschikbaar" te tonen.
+    // Wordt true als Watchmode een fout geeft (bijv. quota op).
     let watchmodeFailed = false;
 
     if (TMDB_API_KEY) {
@@ -284,14 +286,15 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    if (watchmodeFailed) {
-      return NextResponse.json(
-        { error: WATCHMODE_UNAVAILABLE_MESSAGE },
-        { status: 503 }
-      );
-    }
-
     if (matches.length === 0) {
+      // Geen titels om te tonen. Als dat komt doordat Watchmode faalt,
+      // zeggen we dat, anders is het echt "niets gevonden".
+      if (watchmodeFailed) {
+        return NextResponse.json(
+          { error: WATCHMODE_UNAVAILABLE_MESSAGE },
+          { status: 503 }
+        );
+      }
       return NextResponse.json({ results: [] as StreamingResult[] });
     }
 
@@ -347,11 +350,10 @@ export async function GET(request: NextRequest) {
       })
     );
 
-    if (watchmodeFailed) {
-      return NextResponse.json(
-        { error: WATCHMODE_UNAVAILABLE_MESSAGE },
-        { status: 503 }
-      );
+    // Titel en poster tonen we altijd. Alleen de geselecteerde titel krijgt
+    // de vlag, zodat de pagina kan laten zien dat de diensten onbekend zijn.
+    if (watchmodeFailed && results[selectIndex]) {
+      results[selectIndex].sourcesUnavailable = true;
     }
 
     return NextResponse.json({ results });

@@ -31,6 +31,7 @@ interface StreamingResult {
   titleType: string | null;
   sources?: Source[];
   popularity?: number;
+    sourcesUnavailable?: boolean;
 }
 
 interface TrendingItem {
@@ -763,7 +764,12 @@ export default function Home() {
                               )}
                             </p>
                           </div>
-
+                          
+{result.sourcesUnavailable && (
+  <p className="mb-3 text-xs text-[#9096a8]">
+    De streaminggegevens zijn tijdelijk niet beschikbaar. Probeer het later opnieuw.
+  </p>
+)}
                           {loadingSources ? (
                             <div className="grid grid-cols-2 lg:grid-cols-3 gap-2">
                               {Array.from({ length: MAJOR_PLATFORMS.length }).map(
