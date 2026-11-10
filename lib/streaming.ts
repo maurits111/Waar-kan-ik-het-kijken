@@ -4,6 +4,9 @@ const WATCHMODE_API_KEY = process.env.WATCHMODE_API_KEY;
 const TMDB_API_KEY = process.env.TMDB_API_KEY;
 const WATCHMODE_BASE = "https://api.watchmode.com/v1";
 const CACHE_REVALIDATE = 86400;
+// Watchmode-calls zijn beperkt (gratis key: 2.500 per maand), dus die
+// bewaren we langer dan de TMDb-data.
+const WATCHMODE_REVALIDATE = 604800; // 7 dagen
 
 const TYPE_LABELS: Record<string, string> = {
   sub: "abonnement",
@@ -35,6 +38,9 @@ export type TitleDetails = {
   voteAverage: number | null;
   voteCount: number;
   sources: StreamingSource[];
+  // true als Watchmode een fout gaf (bijv. quota op): dan weten we de
+  // beschikbaarheid niet, en tonen we dat ook zo.
+  sourcesUnavailable: boolean;
   similar: SimilarTitle[];
 };
 
@@ -148,10 +154,6 @@ async function getSimilarTitles(
   }
 }
 
-
-
-
-
 export async function getTitleData(
   tmdbId: number,
   type: "movie" | "tv"
@@ -178,39 +180,49 @@ export async function getTitleData(
     : null;
 
   let watchmodeId: number | null = null;
+  let sourcesUnavailable = false;
   try {
     const wmSearch = await fetch(
       `${WATCHMODE_BASE}/search/?apiKey=${WATCHMODE_API_KEY}&search_field=tmdb_${
         type === "tv" ? "tv" : "movie"
       }_id&search_value=${tmdbId}`,
-      { next: { revalidate: CACHE_REVALIDATE } }
+      { next: { revalidate: WATCHMODE_REVALIDATE } }
     );
-    const wmData = await wmSearch.json();
-    watchmodeId = wmData?.title_results?.[0]?.id ?? null;
+    if (!wmSearch.ok) {
+      sourcesUnavailable = true;
+    } else {
+      const wmData = await wmSearch.json();
+      watchmodeId = wmData?.title_results?.[0]?.id ?? null;
+    }
   } catch {
-    watchmodeId = null;
+    sourcesUnavailable = true;
   }
 
+  const similar = await getSimilarTitles(tmdbId, type);
+
   let sources: StreamingSource[] = [];
-    const similar = await getSimilarTitles(tmdbId, type);
   if (watchmodeId) {
     try {
       const providerLogos = await getProviderLogos();
       const sourcesRes = await fetch(
         `${WATCHMODE_BASE}/title/${watchmodeId}/sources/?apiKey=${WATCHMODE_API_KEY}&regions=NL`,
-        { next: { revalidate: CACHE_REVALIDATE } }
+        { next: { revalidate: WATCHMODE_REVALIDATE } }
       );
       const sourcesData = await sourcesRes.json();
-      const raw = (Array.isArray(sourcesData) ? sourcesData : []).filter(
-        (s: { region?: string }) => s.region === "NL"
-      );
-      sources = dedupeSources(raw, providerLogos);
+      if (!sourcesRes.ok || !Array.isArray(sourcesData)) {
+        sourcesUnavailable = true;
+      } else {
+        const raw = sourcesData.filter(
+          (s: { region?: string }) => s.region === "NL"
+        );
+        sources = dedupeSources(raw, providerLogos);
+      }
     } catch {
-      sources = [];
+      sourcesUnavailable = true;
     }
   }
 
-    return {
+  return {
     tmdbId,
     name,
     year,
@@ -223,6 +235,7 @@ export async function getTitleData(
     voteAverage: detail.vote_average ?? null,
     voteCount: detail.vote_count ?? 0,
     sources,
+    sourcesUnavailable,
     similar,
   };
 }

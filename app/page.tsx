@@ -585,6 +585,7 @@ export default function Home() {
                         return (
                           <div key={`${t.media_type}-${t.id}`} className="w-32 shrink-0 text-left group flex flex-col justify-between">
                             <Link
+                            prefetch={false}
                               href={`/titel/${t.media_type}-${t.id}`}
                               className="block"
                             >
