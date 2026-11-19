@@ -134,11 +134,13 @@ export default async function TitlePage({
                       </p>
                     )}
                   </div>
-{data.sourcesUnavailable && (
-  <p className="mb-3 text-xs text-[#9096a8]">
-    De streaminggegevens zijn tijdelijk niet beschikbaar. Probeer het later opnieuw.
-  </p>
-)}
+
+                  {data.sourcesUnavailable && (
+                    <p className="mb-3 text-xs text-[#9096a8]">
+                      De streaminggegevens zijn tijdelijk niet beschikbaar. Probeer het later opnieuw.
+                    </p>
+                  )}
+
                   <div className="grid grid-cols-2 lg:grid-cols-3 gap-2">
                     {MAJOR_PLATFORMS.map((platform) => {
                       const match = data.sources.find((s) => s.name === platform.label);
@@ -220,6 +222,7 @@ export default async function TitlePage({
                 {data.similar.map((s) => (
                   <Link
                     key={s.tmdbId}
+                    rel="nofollow"
                     prefetch={false}
                     href={`/titel/${s.titleType === "tv_series" ? "tv" : "movie"}-${s.tmdbId}`}
                     className="w-32 shrink-0 text-left group block"
