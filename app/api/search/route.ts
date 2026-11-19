@@ -4,7 +4,10 @@ import { findPlatform } from "@/lib/platforms";
 const WATCHMODE_API_KEY = process.env.WATCHMODE_API_KEY;
 const TMDB_API_KEY = process.env.TMDB_API_KEY;
 const WATCHMODE_BASE = "https://api.watchmode.com/v1";
-const CACHE_REVALIDATE = 86400;
+const CACHE_REVALIDATE = 86400; // TMDb-gegevens: 24 uur
+// Watchmode-calls zijn beperkt (gratis key: 2.500 per maand), dus die
+// bewaren we langer dan de TMDb-data.
+const WATCHMODE_REVALIDATE = 604800; // 7 dagen
 
 const WATCHMODE_UNAVAILABLE_MESSAGE =
   "De streaminggegevens zijn tijdelijk niet beschikbaar. Probeer het later opnieuw.";
@@ -235,7 +238,7 @@ export async function GET(request: NextRequest) {
                 `${WATCHMODE_BASE}/search/?apiKey=${WATCHMODE_API_KEY}&search_field=tmdb_${
                   isTv ? "tv" : "movie"
                 }_id&search_value=${item.id}`,
-                { next: { revalidate: CACHE_REVALIDATE } }
+                { next: { revalidate: WATCHMODE_REVALIDATE } }
               );
               if (!wmSearch.ok) {
                 watchmodeFailed = true;
@@ -266,7 +269,7 @@ export async function GET(request: NextRequest) {
         `${WATCHMODE_BASE}/search/?apiKey=${WATCHMODE_API_KEY}&search_field=name&search_value=${encodeURIComponent(
           query
         )}`,
-        { next: { revalidate: CACHE_REVALIDATE } }
+        { next: { revalidate: WATCHMODE_REVALIDATE } }
       );
       if (!searchRes.ok) {
         watchmodeFailed = true;
@@ -313,7 +316,7 @@ export async function GET(request: NextRequest) {
           try {
             const sourcesRes = await fetch(
               `${WATCHMODE_BASE}/title/${match.watchmodeId}/sources/?apiKey=${WATCHMODE_API_KEY}&regions=${region}`,
-              { next: { revalidate: CACHE_REVALIDATE } }
+              { next: { revalidate: WATCHMODE_REVALIDATE } }
             );
             const sourcesData = await sourcesRes.json();
 
