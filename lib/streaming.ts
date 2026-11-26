@@ -1,3 +1,4 @@
+import { headers } from "next/headers";
 import { findPlatform } from "@/lib/platforms";
 
 const WATCHMODE_API_KEY = process.env.WATCHMODE_API_KEY;
@@ -17,6 +18,22 @@ const TYPE_LABELS: Record<string, string> = {
 
 // Voorkeursvolgorde voor welke link je toont als er meerdere opties zijn
 const TYPE_PRIORITY = ["sub", "free", "rent", "buy"];
+
+// Herkenbare bots en tools. Zij krijgen geen Watchmode-calls, maar de
+// gegevens van TMDb (die kosten geen Watchmode-quota).
+const BOT_PATTERN =
+  /bot|crawl|spider|slurp|facebookexternalhit|embedly|preview|headless|python|curl|wget|scrapy|httpclient|http-client|go-http|axios|node-fetch|okhttp|lighthouse/i;
+
+async function isLikelyBot(): Promise<boolean> {
+  try {
+    const h = await headers();
+    const ua = h.get("user-agent") ?? "";
+    return ua === "" || BOT_PATTERN.test(ua);
+  } catch {
+    // Buiten een gewoon verzoek (bijv. bij het bouwen) is er geen header.
+    return false;
+  }
+}
 
 export type StreamingSource = {
   name: string;
@@ -38,8 +55,9 @@ export type TitleDetails = {
   voteAverage: number | null;
   voteCount: number;
   sources: StreamingSource[];
-  // true als Watchmode een fout gaf (bijv. quota op): dan weten we de
-  // beschikbaarheid niet, en tonen we dat ook zo.
+  // Waar de diensten vandaan komen. Bij "tmdb" moet JustWatch genoemd worden.
+  sourcesFrom: "watchmode" | "tmdb";
+  // true als we de beschikbaarheid niet kennen (alle bronnen faalden).
   sourcesUnavailable: boolean;
   similar: SimilarTitle[];
 };
@@ -128,6 +146,44 @@ function dedupeSources(
   });
 }
 
+// Terugval: streamingdiensten uit TMDb (data van JustWatch). Geen directe
+// links naar de dienst zelf: de link gaat naar de TMDb-pagina van de titel.
+async function getTmdbSources(
+  tmdbId: number,
+  type: "movie" | "tv",
+  providerLogos: Record<string, string>
+): Promise<StreamingSource[]> {
+  if (!TMDB_API_KEY) return [];
+  try {
+    const res = await fetch(
+      `https://api.themoviedb.org/3/${type}/${tmdbId}/watch/providers?api_key=${TMDB_API_KEY}`,
+      { next: { revalidate: CACHE_REVALIDATE } }
+    );
+    if (!res.ok) return [];
+    const data = await res.json();
+    const nl = data?.results?.NL;
+    if (!nl) return [];
+
+    const link: string =
+      nl.link ?? `https://www.themoviedb.org/${type}/${tmdbId}/watch`;
+    const raw: { name: string; type: string; web_url: string }[] = [];
+    const add = (list: { provider_name?: string }[] | undefined, t: string) => {
+      for (const p of list ?? []) {
+        if (p.provider_name) raw.push({ name: p.provider_name, type: t, web_url: link });
+      }
+    };
+    add(nl.flatrate, "sub");
+    add(nl.free, "free");
+    add(nl.ads, "free");
+    add(nl.rent, "rent");
+    add(nl.buy, "buy");
+
+    return dedupeSources(raw, providerLogos);
+  } catch {
+    return [];
+  }
+}
+
 async function getSimilarTitles(
   tmdbId: number,
   type: "movie" | "tv"
@@ -179,31 +235,39 @@ export async function getTitleData(
     ? `https://image.tmdb.org/t/p/w780${detail.backdrop_path}`
     : null;
 
+  const bot = await isLikelyBot();
   let watchmodeId: number | null = null;
   let sourcesUnavailable = false;
-  try {
-    const wmSearch = await fetch(
-      `${WATCHMODE_BASE}/search/?apiKey=${WATCHMODE_API_KEY}&search_field=tmdb_${
-        type === "tv" ? "tv" : "movie"
-      }_id&search_value=${tmdbId}`,
-      { next: { revalidate: WATCHMODE_REVALIDATE } }
-    );
-    if (!wmSearch.ok) {
+
+  // Bots krijgen geen Watchmode-calls.
+  if (!bot) {
+    try {
+      const wmSearch = await fetch(
+        `${WATCHMODE_BASE}/search/?apiKey=${WATCHMODE_API_KEY}&search_field=tmdb_${
+          type === "tv" ? "tv" : "movie"
+        }_id&search_value=${tmdbId}`,
+        { next: { revalidate: WATCHMODE_REVALIDATE } }
+      );
+      if (!wmSearch.ok) {
+        sourcesUnavailable = true;
+      } else {
+        const wmData = await wmSearch.json();
+        watchmodeId = wmData?.title_results?.[0]?.id ?? null;
+      }
+    } catch {
       sourcesUnavailable = true;
-    } else {
-      const wmData = await wmSearch.json();
-      watchmodeId = wmData?.title_results?.[0]?.id ?? null;
     }
-  } catch {
-    sourcesUnavailable = true;
   }
 
   const similar = await getSimilarTitles(tmdbId, type);
+  const providerLogos = await getProviderLogos();
 
   let sources: StreamingSource[] = [];
-  if (watchmodeId) {
+  let sourcesFrom: "watchmode" | "tmdb" = "watchmode";
+  let watchmodeOk = false;
+
+  if (!bot && watchmodeId) {
     try {
-      const providerLogos = await getProviderLogos();
       const sourcesRes = await fetch(
         `${WATCHMODE_BASE}/title/${watchmodeId}/sources/?apiKey=${WATCHMODE_API_KEY}&regions=NL`,
         { next: { revalidate: WATCHMODE_REVALIDATE } }
@@ -216,9 +280,21 @@ export async function getTitleData(
           (s: { region?: string }) => s.region === "NL"
         );
         sources = dedupeSources(raw, providerLogos);
+        watchmodeOk = true;
       }
     } catch {
       sourcesUnavailable = true;
+    }
+  }
+
+  // Terugval op TMDb als Watchmode niet is gebruikt of niets opleverde door
+  // een fout (bot, quota op, titel onbekend bij Watchmode).
+  if (!watchmodeOk) {
+    const fallback = await getTmdbSources(tmdbId, type, providerLogos);
+    if (fallback.length > 0) {
+      sources = fallback;
+      sourcesFrom = "tmdb";
+      sourcesUnavailable = false;
     }
   }
 
@@ -235,6 +311,7 @@ export async function getTitleData(
     voteAverage: detail.vote_average ?? null,
     voteCount: detail.vote_count ?? 0,
     sources,
+    sourcesFrom,
     sourcesUnavailable,
     similar,
   };

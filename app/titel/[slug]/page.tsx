@@ -206,9 +206,11 @@ export default async function TitlePage({
                 </p>
               )}
 
-              <p className="mt-4 text-[11px] text-[#565c6e]">
-                Gebaseerd op onze bronnen (Watchmode). Sommige diensten, zoals NPO Start,
-                worden niet altijd volledig bijgewerkt.
+               <p className="mt-4 text-[11px] text-[#565c6e]">
+                {data.sourcesFrom === "tmdb"
+                  ? "Streaminggegevens via TMDB, met data van JustWatch."
+                  : "Gebaseerd op onze bronnen (Watchmode)."}{" "}
+                Sommige diensten, zoals NPO Start, worden niet altijd volledig bijgewerkt.
               </p>
             </div>
           </div>
