@@ -260,7 +260,7 @@ export async function getTitleData(
   tmdbId: number,
   type: "movie" | "tv"
 ): Promise<TitleDetails | null> {
-  if (!TMDB_API_KEY || !WATCHMODE_API_KEY) return null;
+  if (!TMDB_API_KEY) return null;
 
   const detailRes = await fetch(
     `https://api.themoviedb.org/3/${type}/${tmdbId}?api_key=${TMDB_API_KEY}&language=nl-NL`,
@@ -285,8 +285,10 @@ export async function getTitleData(
   let watchmodeId: number | null = null;
   let sourcesUnavailable = false;
 
-  // Bots krijgen geen Watchmode-calls.
-  if (!bot) {
+  // Bots krijgen geen Watchmode-calls. Zonder Watchmode-key slaan we
+  // Watchmode over en gaan we door met de andere bronnen.
+  const useWatchmode = !bot && !!WATCHMODE_API_KEY;
+  if (useWatchmode) {
     try {
       const wmSearch = await fetch(
         `${WATCHMODE_BASE}/search/?apiKey=${WATCHMODE_API_KEY}&search_field=tmdb_${
@@ -312,7 +314,7 @@ export async function getTitleData(
   let sourcesFrom: "watchmode" | "streaming-availability" | "tmdb" = "watchmode";
   let watchmodeOk = false;
 
-  if (!bot && watchmodeId) {
+  if (useWatchmode && watchmodeId) {
     try {
       const sourcesRes = await fetch(
         `${WATCHMODE_BASE}/title/${watchmodeId}/sources/?apiKey=${WATCHMODE_API_KEY}&regions=NL`,
