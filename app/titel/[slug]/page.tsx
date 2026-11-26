@@ -206,10 +206,25 @@ export default async function TitlePage({
                 </p>
               )}
 
-               <p className="mt-4 text-[11px] text-[#565c6e]">
-                {data.sourcesFrom === "tmdb"
-                  ? "Streaminggegevens via TMDB, met data van JustWatch."
-                  : "Gebaseerd op onze bronnen (Watchmode)."}{" "}
+              <p className="mt-4 text-[11px] text-[#565c6e]">
+                {data.sourcesFrom === "tmdb" ? (
+                  "Streaminggegevens via TMDB, met data van JustWatch."
+                ) : data.sourcesFrom === "streaming-availability" ? (
+                  <>
+                    Streaming availability information provided by{" "}
+                    <a
+                      href="https://www.movieofthenight.com/about/api"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="underline hover:text-[#9096a8]"
+                    >
+                      Streaming Availability API by Movie of the Night
+                    </a>
+                    .
+                  </>
+                ) : (
+                  "Gebaseerd op onze bronnen (Watchmode)."
+                )}{" "}
                 Sommige diensten, zoals NPO Start, worden niet altijd volledig bijgewerkt.
               </p>
             </div>
@@ -254,7 +269,7 @@ export default async function TitlePage({
 
         <footer className="relative mt-12 text-center text-[11px] text-[#565c6e] space-y-1">
           <p>© {new Date().getFullYear()} Waar kan ik het kijken?</p>
-          <p>Gegevens aangeleverd door TMDB en Watchmode</p>
+          <p>Gegevens aangeleverd door TMDB, Watchmode en Streaming Availability</p>
         </footer>
       </main>
     </>

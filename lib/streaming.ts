@@ -3,9 +3,11 @@ import { findPlatform } from "@/lib/platforms";
 
 const WATCHMODE_API_KEY = process.env.WATCHMODE_API_KEY;
 const TMDB_API_KEY = process.env.TMDB_API_KEY;
+const SA_API_KEY = process.env.STREAMING_AVAILABILITY_API_KEY;
 const WATCHMODE_BASE = "https://api.watchmode.com/v1";
+const SA_BASE = "https://api.movieofthenight.com/v4";
 const CACHE_REVALIDATE = 86400;
-// Watchmode-calls zijn beperkt (gratis key: 2.500 per maand), dus die
+// Watchmode- en Streaming Availability-calls zijn beperkt, dus die
 // bewaren we langer dan de TMDb-data.
 const WATCHMODE_REVALIDATE = 604800; // 7 dagen
 
@@ -19,8 +21,17 @@ const TYPE_LABELS: Record<string, string> = {
 // Voorkeursvolgorde voor welke link je toont als er meerdere opties zijn
 const TYPE_PRIORITY = ["sub", "free", "rent", "buy"];
 
-// Herkenbare bots en tools. Zij krijgen geen Watchmode-calls, maar de
-// gegevens van TMDb (die kosten geen Watchmode-quota).
+// Streaming Availability noemt de typen anders dan Watchmode.
+const SA_TYPE_MAP: Record<string, string> = {
+  subscription: "sub",
+  free: "free",
+  rent: "rent",
+  buy: "buy",
+  addon: "sub",
+};
+
+// Herkenbare bots en tools. Zij krijgen geen Watchmode- of
+// Streaming Availability-calls, maar de gegevens van TMDb.
 const BOT_PATTERN =
   /bot|crawl|spider|slurp|facebookexternalhit|embedly|preview|headless|python|curl|wget|scrapy|httpclient|http-client|go-http|axios|node-fetch|okhttp|lighthouse/i;
 
@@ -56,7 +67,7 @@ export type TitleDetails = {
   voteCount: number;
   sources: StreamingSource[];
   // Waar de diensten vandaan komen. Bij "tmdb" moet JustWatch genoemd worden.
-  sourcesFrom: "watchmode" | "tmdb";
+  sourcesFrom: "watchmode" | "streaming-availability" | "tmdb";
   // true als we de beschikbaarheid niet kennen (alle bronnen faalden).
   sourcesUnavailable: boolean;
   similar: SimilarTitle[];
@@ -146,8 +157,43 @@ function dedupeSources(
   });
 }
 
-// Terugval: streamingdiensten uit TMDb (data van JustWatch). Geen directe
-// links naar de dienst zelf: de link gaat naar de TMDb-pagina van de titel.
+// Tweede bron: Streaming Availability (met directe links). Alleen gebruikt
+// als Watchmode niet werkt. Geeft een lege lijst bij een fout.
+async function getStreamingAvailabilitySources(
+  tmdbId: number,
+  type: "movie" | "tv",
+  providerLogos: Record<string, string>
+): Promise<StreamingSource[]> {
+  if (!SA_API_KEY) return [];
+  try {
+    const res = await fetch(`${SA_BASE}/shows/${type}/${tmdbId}?country=nl`, {
+      headers: { "X-API-Key": SA_API_KEY },
+      next: { revalidate: WATCHMODE_REVALIDATE },
+    });
+    if (!res.ok) return [];
+    const data = await res.json();
+    const options: {
+      service?: { name?: string };
+      type?: string;
+      link?: string;
+    }[] = data?.streamingOptions?.nl ?? [];
+
+    const raw = options
+      .filter((o) => o.service?.name && o.link)
+      .map((o) => ({
+        name: o.service!.name as string,
+        type: SA_TYPE_MAP[o.type ?? ""] ?? "sub",
+        web_url: o.link as string,
+      }));
+
+    return dedupeSources(raw, providerLogos);
+  } catch {
+    return [];
+  }
+}
+
+// Laatste terugval: streamingdiensten uit TMDb (data van JustWatch). Geen
+// directe links naar de dienst zelf: de link gaat naar de TMDb-pagina.
 async function getTmdbSources(
   tmdbId: number,
   type: "movie" | "tv",
@@ -263,7 +309,7 @@ export async function getTitleData(
   const providerLogos = await getProviderLogos();
 
   let sources: StreamingSource[] = [];
-  let sourcesFrom: "watchmode" | "tmdb" = "watchmode";
+  let sourcesFrom: "watchmode" | "streaming-availability" | "tmdb" = "watchmode";
   let watchmodeOk = false;
 
   if (!bot && watchmodeId) {
@@ -287,14 +333,25 @@ export async function getTitleData(
     }
   }
 
-  // Terugval op TMDb als Watchmode niet is gebruikt of niets opleverde door
-  // een fout (bot, quota op, titel onbekend bij Watchmode).
+  // Als Watchmode niet is gebruikt of niets opleverde (bot, quota op, titel
+  // onbekend): eerst Streaming Availability (alleen voor echte bezoekers),
+  // dan TMDb.
   if (!watchmodeOk) {
-    const fallback = await getTmdbSources(tmdbId, type, providerLogos);
-    if (fallback.length > 0) {
-      sources = fallback;
-      sourcesFrom = "tmdb";
-      sourcesUnavailable = false;
+    if (!bot) {
+      const sa = await getStreamingAvailabilitySources(tmdbId, type, providerLogos);
+      if (sa.length > 0) {
+        sources = sa;
+        sourcesFrom = "streaming-availability";
+        sourcesUnavailable = false;
+      }
+    }
+    if (sources.length === 0) {
+      const fallback = await getTmdbSources(tmdbId, type, providerLogos);
+      if (fallback.length > 0) {
+        sources = fallback;
+        sourcesFrom = "tmdb";
+        sourcesUnavailable = false;
+      }
     }
   }
 
