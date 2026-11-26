@@ -166,7 +166,7 @@ async function getStreamingAvailabilitySources(
 ): Promise<StreamingSource[]> {
   if (!SA_API_KEY) return [];
   try {
-    const res = await fetch(`${SA_BASE}/shows/${type}/${tmdbId}?country=nl`, {
+    const res = await fetch(`${SA_BASE}/shows/${type}/${tmdbId}?country=nl&series_granularity=show`, {
       headers: { "X-API-Key": SA_API_KEY },
       next: { revalidate: WATCHMODE_REVALIDATE },
     });
