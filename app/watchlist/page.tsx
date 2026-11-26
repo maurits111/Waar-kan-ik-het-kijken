@@ -5,9 +5,20 @@ import Link from 'next/link';
 
 const WATCHLIST_KEY = 'my_watchlist';
 
+type Suggestion = {
+  titleId: number;
+  name: string;
+  poster: string | null;
+  type: string;
+  year: number | null;
+};
+
 export default function WatchlistPage() {
   const [watchlist, setWatchlist] = useState<any[]>([]);
   const [newMovieTitle, setNewMovieTitle] = useState('');
+  const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
+  // Alleen suggesties tonen vanaf 3 letters.
+  const visibleSuggestions = newMovieTitle.trim().length >= 3 ? suggestions : [];
 
   useEffect(() => {
     const saved = localStorage.getItem(WATCHLIST_KEY);
@@ -31,23 +42,71 @@ export default function WatchlistPage() {
     } catch {}
   };
 
-  const addManualMovie = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newMovieTitle.trim()) return;
-
-    const newMovie = {
-      id: Date.now(),
-      titleId: Date.now(),
-      name: newMovieTitle,
-      poster: '',
+  // Suggesties ophalen terwijl je typt (vanaf 3 letters, na 300 ms).
+  // Gebruikt alleen TMDb, dus geen Watchmode-quota.
+  useEffect(() => {
+    const q = newMovieTitle.trim();
+    if (q.length < 3) return;
+    const controller = new AbortController();
+    const timer = setTimeout(async () => {
+      try {
+        const res = await fetch(
+          `/api/search?q=${encodeURIComponent(q)}&region=NL&mode=suggest`,
+          { signal: controller.signal }
+        );
+        const data = await res.json();
+        if (res.ok && data.results) setSuggestions(data.results.slice(0, 5));
+      } catch {}
+    }, 300);
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
     };
+  }, [newMovieTitle]);
 
-    const updated = [...watchlist, newMovie];
+  const addItem = (item: { id: number; titleId: number; name: string; poster: string; type?: string; year?: number | null }) => {
+    const cleanId = getItemId(item);
+    if (watchlist.some((w) => getItemId(w) === cleanId)) {
+      setNewMovieTitle('');
+      setSuggestions([]);
+      return;
+    }
+    const updated = [...watchlist, item];
     setWatchlist(updated);
     try {
       localStorage.setItem(WATCHLIST_KEY, JSON.stringify(updated));
     } catch {}
     setNewMovieTitle('');
+    setSuggestions([]);
+  };
+
+  const addSuggestion = (s: Suggestion) => {
+    addItem({
+      id: s.titleId,
+      titleId: s.titleId,
+      name: s.name,
+      poster: s.poster || '',
+      type: s.type,
+      year: s.year,
+    });
+  };
+
+  const addManualMovie = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newMovieTitle.trim()) return;
+
+    // Is er een suggestie? Dan de bovenste nemen (met plaatje).
+    if (visibleSuggestions.length > 0) {
+      addSuggestion(visibleSuggestions[0]);
+      return;
+    }
+
+    addItem({
+      id: Date.now(),
+      titleId: Date.now(),
+      name: newMovieTitle,
+      poster: '',
+    });
   };
 
   return (
@@ -57,7 +116,34 @@ export default function WatchlistPage() {
         <p className="text-gray-400 mb-6">Bekijk hier jouw opgeslagen films en series.</p>
 
         {/* Handmatig een film toevoegen */}
-        <form onSubmit={addManualMovie} className="mb-8 flex gap-2">
+        <form onSubmit={addManualMovie} className="mb-8 flex gap-2 relative">
+          {visibleSuggestions.length > 0 && (
+            <ul className="absolute top-full left-0 right-0 mt-2 z-10 bg-[#181c27] border border-[#232838] rounded-xl overflow-hidden shadow-lg">
+              {visibleSuggestions.map((s) => (
+                <li key={s.titleId}>
+                  <button
+                    type="button"
+                    onClick={() => addSuggestion(s)}
+                    className="w-full flex items-center gap-3 px-3 py-2 text-left hover:bg-[#232838] cursor-pointer"
+                  >
+                    {s.poster ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={s.poster} alt={s.name} className="w-10 h-14 object-cover rounded" />
+                    ) : (
+                      <div className="w-10 h-14 bg-[#232838] rounded" />
+                    )}
+                    <span className="flex-1">
+                      {s.name}
+                      {s.year ? <span className="text-gray-400"> ({s.year})</span> : null}
+                      <span className="block text-xs text-gray-400">
+                        {s.type === 'tv_series' ? 'Serie' : 'Film'}
+                      </span>
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
           <input
             type="text"
             value={newMovieTitle}

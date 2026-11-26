@@ -195,17 +195,55 @@ export async function GET(request: NextRequest) {
           rawResults = [...movies, ...tvShows];
         }
       } else if (query) {
-        const tmdbRes = await fetch(
-          `https://api.themoviedb.org/3/search/multi?api_key=${TMDB_API_KEY}&query=${encodeURIComponent(
-            query
-          )}&language=nl-NL&page=1`,
-          { next: { revalidate: CACHE_REVALIDATE } }
-        );
-        const tmdbData = await tmdbRes.json();
+        // Bij suggesties (half getypte titel) halen we 3 pagina's op, zodat
+        // populaire titels zoals "Interstellar" bij "inte" ook meedoen.
+        // Dit is alleen TMDb (gratis), geen Watchmode.
+        const fetchSearch = async (q: string, page: number) => {
+          try {
+            const tmdbRes = await fetch(
+              `https://api.themoviedb.org/3/search/multi?api_key=${TMDB_API_KEY}&query=${encodeURIComponent(
+                q
+              )}&language=nl-NL&page=${page}`,
+              { next: { revalidate: CACHE_REVALIDATE } }
+            );
+            const tmdbData = await tmdbRes.json();
+            return (tmdbData?.results || []) as TmdbItem[];
+          } catch {
+            return [] as TmdbItem[];
+          }
+        };
 
-        rawResults = (tmdbData?.results || []).filter(
-          (item: TmdbItem) => item.media_type === "movie" || item.media_type === "tv"
-        );
+        const pages = suggestOnly ? [1, 2, 3] : [1];
+        const pageResults = await Promise.all(pages.map((p) => fetchSearch(query, p)));
+
+        // TMDb zoekt op hele woorden. Is wat je typte toevallig zelf een woord
+        // (zoals "inte"), dan mist het "Interstellar". Daarom zoeken we bij
+        // suggesties ook met één letter minder, en houden daarvan alleen titels
+        // met een woord dat begint met wat je typte.
+        const trimmed = query.trim().toLowerCase();
+        if (suggestOnly && trimmed.length > 3) {
+          const shorter = trimmed.slice(0, -1);
+          const extra = (
+            await Promise.all([1, 2, 3].map((p) => fetchSearch(shorter, p)))
+          ).flat();
+          pageResults.push(
+            extra.filter((item) =>
+              ((item.media_type === "tv" ? item.name : item.title) ?? "")
+                .toLowerCase()
+                .split(/[^\p{L}\p{N}]+/u)
+                .some((word) => word.startsWith(trimmed))
+            )
+          );
+        }
+
+        const seen = new Set<string>();
+        rawResults = pageResults.flat().filter((item: TmdbItem) => {
+          if (item.media_type !== "movie" && item.media_type !== "tv") return false;
+          const key = `${item.media_type}-${item.id}`;
+          if (seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        });
       }
 
       if (query && typeFilter) {
@@ -217,7 +255,8 @@ export async function GET(request: NextRequest) {
       rawResults.sort((a, b) => (b.popularity || 0) - (a.popularity || 0));
 
       // Als er een zoekopdracht is, pak direct alleen de nummer 1 (geen keuzerij meer)
-      const limit = query ? 1 : (platformFilter || typeFilter) ? 10 : 5;
+      // Suggesties tonen er 5.
+      const limit = suggestOnly ? 5 : query ? 1 : (platformFilter || typeFilter) ? 10 : 5;
       const tmdbResults = rawResults.slice(0, limit);
 
       matches = await Promise.all(
