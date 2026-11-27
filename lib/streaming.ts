@@ -9,7 +9,7 @@ const SA_BASE = "https://api.movieofthenight.com/v4";
 const CACHE_REVALIDATE = 86400;
 // Watchmode- en Streaming Availability-calls zijn beperkt, dus die
 // bewaren we langer dan de TMDb-data.
-const WATCHMODE_REVALIDATE = 604800; // 7 dagen
+const WATCHMODE_REVALIDATE = 2592000; // 30 dagen
 
 const TYPE_LABELS: Record<string, string> = {
   sub: "abonnement",
@@ -43,6 +43,22 @@ async function isLikelyBot(): Promise<boolean> {
   } catch {
     // Buiten een gewoon verzoek (bijv. bij het bouwen) is er geen header.
     return false;
+  }
+}
+
+// Alleen bezoekers uit NL en BE mogen Watchmode en Streaming Availability
+// gebruiken. Zonder land-header (bijv. lokaal) laten we het toe.
+const ALLOWED_COUNTRIES = ["NL", "BE"];
+
+async function isAllowedCountry(): Promise<boolean> {
+  try {
+    const h = await headers();
+    const country = h.get("x-vercel-ip-country");
+    if (!country) return true;
+    return ALLOWED_COUNTRIES.includes(country.toUpperCase());
+  } catch {
+    // Buiten een gewoon verzoek (bijv. bij het bouwen) is er geen header.
+    return true;
   }
 }
 
@@ -281,7 +297,9 @@ export async function getTitleData(
     ? `https://image.tmdb.org/t/p/w780${detail.backdrop_path}`
     : null;
 
-  const bot = await isLikelyBot();
+  // Bots en bezoekers buiten NL/BE krijgen alleen TMDb, zodat zij geen
+  // Watchmode- of Streaming Availability-quota verbruiken.
+  const bot = (await isLikelyBot()) || !(await isAllowedCountry());
   let watchmodeId: number | null = null;
   let sourcesUnavailable = false;
 

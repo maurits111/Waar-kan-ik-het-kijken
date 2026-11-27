@@ -7,7 +7,7 @@ const WATCHMODE_BASE = "https://api.watchmode.com/v1";
 const CACHE_REVALIDATE = 86400; // TMDb-gegevens: 24 uur
 // Watchmode-calls zijn beperkt (gratis key: 2.500 per maand), dus die
 // bewaren we langer dan de TMDb-data.
-const WATCHMODE_REVALIDATE = 604800; // 7 dagen
+const WATCHMODE_REVALIDATE = 2592000; // 30 dagen
 
 const WATCHMODE_UNAVAILABLE_MESSAGE =
   "De streaminggegevens zijn tijdelijk niet beschikbaar. Probeer het later opnieuw.";
